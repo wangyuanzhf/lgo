@@ -2,15 +2,30 @@
 
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { useState, useCallback, useEffect } from 'react'
+import Image from '@tiptap/extension-image'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { use } from 'react'
 
-function MenuBar({ editor }: { editor: ReturnType<typeof useEditor> | null }) {
+function MenuBar({ editor, userId }: { editor: ReturnType<typeof useEditor> | null; userId: string }) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
   if (!editor) return null
   const btn = (active: boolean) =>
     `px-2 py-1 text-xs rounded border transition-colors ${active ? 'bg-[#1f2328] text-white border-[#1f2328]' : 'bg-white text-[#57606a] border-[#d0d7de] hover:bg-[#f6f8fa]'}`
+
+  const handleImageUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) return
+    if (file.size > 5 * 1024 * 1024) { alert('图片大小不能超过 5MB'); return }
+    const supabase = createClient()
+    const ext = file.name.split('.').pop()
+    const path = `${userId}/${crypto.randomUUID()}.${ext}`
+    const { error } = await supabase.storage.from('post-images').upload(path, file)
+    if (error) { alert('上传失败：' + error.message); return }
+    const { data: { publicUrl } } = supabase.storage.from('post-images').getPublicUrl(path)
+    editor.chain().focus().setImage({ src: publicUrl }).run()
+  }
+
   return (
     <div className="flex flex-wrap gap-1 p-2 border-b border-[#d0d7de] bg-[#f6f8fa]">
       <button onClick={() => editor.chain().focus().toggleBold().run()} className={btn(editor.isActive('bold'))} type="button">B</button>
@@ -27,6 +42,16 @@ function MenuBar({ editor }: { editor: ReturnType<typeof useEditor> | null }) {
       <button onClick={() => editor.chain().focus().toggleBlockquote().run()} className={btn(editor.isActive('blockquote'))} type="button">" 引用</button>
       <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={btn(editor.isActive('codeBlock'))} type="button">{'<>'} 代码块</button>
       <div className="w-px bg-[#d0d7de] mx-1" />
+      <label className={`${btn(false)} cursor-pointer`}>
+        图片
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); e.target.value = '' }}
+        />
+      </label>
       <button onClick={() => editor.chain().focus().undo().run()} className={btn(false)} type="button">↩ 撤销</button>
       <button onClick={() => editor.chain().focus().redo().run()} className={btn(false)} type="button">↪ 重做</button>
     </div>
@@ -58,10 +83,11 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [userId, setUserId] = useState('')
 
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: [StarterKit],
+    extensions: [StarterKit, Image],
     content: '',
     editorProps: {
       attributes: { class: 'prose max-w-none p-4 min-h-[400px] focus:outline-none text-[#1f2328]' },
@@ -73,6 +99,7 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
+      setUserId(user.id)
       const { data: post } = await supabase
         .from('posts').select('*').eq('id', id).eq('user_id', user.id).single()
       if (!post) { router.push('/blog'); return }
@@ -117,7 +144,7 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
           <input type="text" placeholder="文章标题" value={title} onChange={(e) => setTitle(e.target.value)}
             className="w-full text-2xl font-semibold text-[#1f2328] placeholder-[#8d96a0] focus:outline-none" />
         </div>
-        <MenuBar editor={editor} />
+        <MenuBar editor={editor} userId={userId} />
         <EditorContent editor={editor!} />
       </div>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}

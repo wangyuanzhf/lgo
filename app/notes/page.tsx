@@ -5,6 +5,24 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 type Note = { id: string; content: string; created_at: string; is_public: boolean }
+type ViewMode = 'timeline' | 'archive'
+type MonthGroup = { month: string; label: string; notes: Note[] }
+
+function groupByMonth(notes: Note[]): MonthGroup[] {
+  const map = new Map<string, Note[]>()
+  for (const note of notes) {
+    const d = new Date(note.created_at)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(note)
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([month, notes]) => {
+      const [y, m] = month.split('-')
+      return { month, label: `${y} 年 ${parseInt(m)} 月`, notes }
+    })
+}
 
 function VisibilityToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -31,6 +49,7 @@ export default function NotesPage() {
   const [submitting, setSubmitting] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('timeline')
   const MAX = 500
 
   const fetchNotes = useCallback(async () => {
@@ -86,9 +105,55 @@ export default function NotesPage() {
     } finally { setTogglingId(null) }
   }
 
+  const NoteActions = ({ note }: { note: Note }) => (
+    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+      <button
+        onClick={() => togglePublic(note)}
+        disabled={togglingId === note.id}
+        className={`text-xs px-1.5 py-0.5 rounded border transition-colors disabled:opacity-50 ${
+          note.is_public
+            ? 'bg-[#ddf4ff] text-[#0969da] border-[#b6e3ff]'
+            : 'bg-[#f6f8fa] text-[#57606a] border-[#d0d7de]'
+        }`}
+      >
+        {note.is_public ? '公开' : '私密'}
+      </button>
+      <button onClick={() => deleteNote(note.id)} disabled={deletingId === note.id}
+        className="text-xs text-[#cf222e] hover:underline disabled:opacity-50">
+        删除
+      </button>
+    </div>
+  )
+
   return (
     <div>
-      <h1 className="text-xl font-semibold text-[#1f2328] mb-6">随笔</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-semibold text-[#1f2328]">随笔</h1>
+        {!loading && notes.length > 0 && (
+          <div className="flex items-center gap-1 bg-[#f6f8fa] border border-[#d0d7de] rounded-md p-0.5">
+            <button
+              onClick={() => setViewMode('timeline')}
+              className={`px-2.5 py-1 text-xs rounded transition-colors ${
+                viewMode === 'timeline'
+                  ? 'bg-white text-[#1f2328] shadow-sm border border-[#d0d7de]'
+                  : 'text-[#57606a] hover:text-[#1f2328]'
+              }`}
+            >
+              时间流
+            </button>
+            <button
+              onClick={() => setViewMode('archive')}
+              className={`px-2.5 py-1 text-xs rounded transition-colors ${
+                viewMode === 'archive'
+                  ? 'bg-white text-[#1f2328] shadow-sm border border-[#d0d7de]'
+                  : 'text-[#57606a] hover:text-[#1f2328]'
+              }`}
+            >
+              归档
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="bg-white border border-[#d0d7de] rounded-md p-4 mb-6">
         <textarea
@@ -117,7 +182,7 @@ export default function NotesPage() {
         <div className="text-center py-8 text-sm text-[#57606a]">加载中...</div>
       ) : notes.length === 0 ? (
         <div className="text-center py-12 text-sm text-[#57606a]">还没有随笔，写下第一条吧</div>
-      ) : (
+      ) : viewMode === 'timeline' ? (
         <div className="columns-1 sm:columns-2 gap-4 space-y-4">
           {notes.map((note) => (
             <div key={note.id} className="break-inside-avoid bg-white border border-[#d0d7de] rounded-md p-4 group">
@@ -126,23 +191,34 @@ export default function NotesPage() {
                 <span className="text-xs text-[#57606a]">
                   {new Date(note.created_at).toLocaleString('zh-CN')}
                 </span>
-                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => togglePublic(note)}
-                    disabled={togglingId === note.id}
-                    className={`text-xs px-1.5 py-0.5 rounded border transition-colors disabled:opacity-50 ${
-                      note.is_public
-                        ? 'bg-[#ddf4ff] text-[#0969da] border-[#b6e3ff]'
-                        : 'bg-[#f6f8fa] text-[#57606a] border-[#d0d7de]'
-                    }`}
-                  >
-                    {note.is_public ? '公开' : '私密'}
-                  </button>
-                  <button onClick={() => deleteNote(note.id)} disabled={deletingId === note.id}
-                    className="text-xs text-[#cf222e] hover:underline disabled:opacity-50">
-                    删除
-                  </button>
-                </div>
+                <NoteActions note={note} />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {groupByMonth(notes).map(({ month, label, notes: monthNotes }) => (
+            <div key={month}>
+              <div className="flex items-center gap-3 mb-3">
+                <h2 className="text-sm font-semibold text-[#1f2328]">{label}</h2>
+                <span className="text-xs px-1.5 py-0.5 rounded-full bg-[#f6f8fa] text-[#57606a] border border-[#d0d7de]">
+                  {monthNotes.length} 条
+                </span>
+                <div className="flex-1 h-px bg-[#d0d7de]" />
+              </div>
+              <div className="space-y-2">
+                {monthNotes.map((note) => (
+                  <div key={note.id} className="bg-white border border-[#d0d7de] rounded-md p-4 group">
+                    <p className="text-sm text-[#1f2328] whitespace-pre-wrap leading-relaxed line-clamp-3">{note.content}</p>
+                    <div className="flex items-center justify-between mt-3 gap-2">
+                      <span className="text-xs text-[#57606a]">
+                        {new Date(note.created_at).toLocaleString('zh-CN')}
+                      </span>
+                      <NoteActions note={note} />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}
