@@ -29,34 +29,28 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const res = await fetch('https://ark.cn-beijing.volces.com/api/v3/responses', {
+    const res = await fetch('https://ark.cn-beijing.volces.com/api/v3/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'doubao-seed-2-0-pro-260215',
-        input: [
-          {
-            role: 'user',
-            content: [{ type: 'input_text', text: prompt }],
-          },
-        ],
+        model: 'ep-m-20260305214148-kttmf',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 100,
       }),
       signal: AbortSignal.timeout(15000),
     })
 
     if (!res.ok) {
-      return NextResponse.json({ error: '大模型不可用' }, { status: 503 })
+      const errText = await res.text()
+      console.error('Ark API error:', res.status, errText)
+      return NextResponse.json({ error: `大模型不可用: ${res.status}` }, { status: 503 })
     }
 
     const data = await res.json()
-    // Find the message output (type === 'message'), skip reasoning
-    const messageOutput = (data?.output ?? []).find(
-      (item: { type: string }) => item.type === 'message'
-    )
-    const text: string = messageOutput?.content?.[0]?.text ?? ''
+    const text: string = data?.choices?.[0]?.message?.content ?? ''
     const tags = text
       .split(/[,，、\n]/)
       .map((t: string) => t.trim().replace(/^[#\s]+/, ''))
