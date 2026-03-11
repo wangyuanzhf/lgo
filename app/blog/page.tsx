@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Suspense } from 'react'
 import SearchInput from './SearchInput'
+import DeleteButton from '@/app/components/DeleteButton'
 
 export default async function BlogPage({
   searchParams,
@@ -93,6 +94,7 @@ export default async function BlogPage({
                 >
                   编辑
                 </Link>
+                <DeleteButton id={post.id} kind="post" />
               </div>
             </div>
           ))}
