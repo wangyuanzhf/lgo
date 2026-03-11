@@ -1,12 +1,11 @@
+import Logo from '@/app/components/Logo'
+
 export default function RegisterConfirmPage() {
   return (
     <div className="min-h-screen bg-[#f6f8fa] flex flex-col items-center justify-center px-4">
       {/* Logo */}
       <div className="mb-6">
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect width="48" height="48" rx="10" fill="#1f2328"/>
-          <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" fill="white" fontFamily="Georgia, 'Times New Roman', serif" fontSize="17" fontWeight="700" letterSpacing="-0.5">mem</text>
-        </svg>
+        <Logo size={48} />
       </div>
 
       {/* Card */}

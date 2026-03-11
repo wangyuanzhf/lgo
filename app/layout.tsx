@@ -13,8 +13,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "登录",
-  description: "用户登录",
+  title: "lgo",
+  description: "lgo — 你的个人内容空间",
+  icons: {
+    icon: [
+      { url: '/favicon-16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
+    ],
+    apple: { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+  },
 };
 
 export default function RootLayout({

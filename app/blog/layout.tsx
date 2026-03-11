@@ -5,5 +5,5 @@ export default function BlogLayout({
 }: {
   children: React.ReactNode
 }) {
-  return <AppShell activeSection="blog">{children}</AppShell>
+  return <AppShell>{children}</AppShell>
 }

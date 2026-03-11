@@ -22,7 +22,9 @@ export default function PostCard({
           {!item.is_public && isSelf && (
             <span className="shrink-0 text-xs px-1.5 py-0.5 rounded bg-[#f6f8fa] text-[#57606a] border border-[#d0d7de]">私密</span>
           )}
-          <h2 className="text-base font-semibold text-[#1f2328] truncate">{item.title}</h2>
+          <Link href={`/blog/${item.id}`} className="text-base font-semibold text-[#1f2328] hover:text-[#0969da] hover:underline truncate">
+            {item.title}
+          </Link>
         </div>
         <span className="shrink-0 text-xs text-[#57606a]">{time}</span>
       </div>

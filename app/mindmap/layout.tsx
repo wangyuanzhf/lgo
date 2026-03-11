@@ -5,5 +5,5 @@ export default function MindmapLayout({
 }: {
   children: React.ReactNode
 }) {
-  return <AppShell activeSection="mindmap">{children}</AppShell>
+  return <AppShell>{children}</AppShell>
 }

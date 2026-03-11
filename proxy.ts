@@ -50,9 +50,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // 注入 pathname 供 AppShell Server Component 读取
+  supabaseResponse.headers.set('x-pathname', request.nextUrl.pathname)
+
   return supabaseResponse
 }
 
 export const config = {
-  matcher: ['/login', '/register', '/dashboard/:path*'],
+  matcher: ['/((?!_next/static|_next/image|favicon|.*\\.png$).*)'],
 }

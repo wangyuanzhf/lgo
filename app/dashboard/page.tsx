@@ -58,7 +58,7 @@ export default async function DashboardPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-[#1f2328]">欢迎回来，{user.email}</h1>
+        <h1 className="text-xl font-semibold text-[#1f2328]">欢迎回来，@{profile?.username ?? user.email}</h1>
         <div className="flex items-center gap-2 mt-1">
           <p className="text-sm text-[#57606a]">选择一个功能开始使用</p>
           {profile && (
