@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { use } from 'react'
 import VisibilityToggle from '@/app/components/VisibilityToggle'
+import TagInput from '@/app/components/TagInput'
 
 function MenuBar({ editor, userId }: { editor: ReturnType<typeof useEditor> | null; userId: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -63,6 +64,9 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
   const { id } = use(params)
   const router = useRouter()
   const [title, setTitle] = useState('')
+  const [tags, setTags] = useState<string[]>([])
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([])
+  const [suggesting, setSuggesting] = useState(false)
   const [isPublic, setIsPublic] = useState(true)
   const [published, setPublished] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -91,7 +95,13 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
       setTitle(post.title)
       setPublished(post.published)
       setIsPublic(post.is_public)
+      setTags(post.tags ?? [])
       editor?.commands.setContent(post.content)
+      // load all tags for suggestions
+      const { data: allPosts } = await supabase
+        .from('posts').select('tags').eq('user_id', user.id)
+      const all = Array.from(new Set((allPosts ?? []).flatMap((p: { tags: string[] }) => p.tags ?? [])))
+      setTagSuggestions(all)
       setLoading(false)
     }
     if (editor) load()
@@ -106,6 +116,7 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
       const { error: err } = await supabase.from('posts').update({
         title: title.trim(), content: editor.getHTML(),
         published: pub, is_public: isPublic,
+        tags,
         updated_at: new Date().toISOString(),
       }).eq('id', id)
       if (err) throw err
@@ -113,7 +124,26 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '保存失败')
     } finally { setSaving(false) }
-  }, [title, editor, id, isPublic, router])
+  }, [title, editor, id, isPublic, tags, router])
+
+  const suggestTags = async () => {
+    setSuggesting(true)
+    try {
+      const res = await fetch('/api/suggest-tags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content: editor?.getHTML() ?? '', type: 'post' }),
+      })
+      const data = await res.json()
+      if (!res.ok) { alert(data.error ?? '大模型不可用'); return }
+      const newTags = (data.tags as string[]).filter((t) => !tags.includes(t))
+      setTags((prev) => [...prev, ...newTags].slice(0, 10))
+    } catch {
+      alert('大模型不可用')
+    } finally {
+      setSuggesting(false)
+    }
+  }
 
   if (loading) return <div className="flex items-center justify-center h-48"><span className="text-sm text-[#57606a]">加载中...</span></div>
 
@@ -133,6 +163,16 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
         <EditorContent editor={editor!} />
       </div>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      <div className="mt-4 bg-white border border-[#d0d7de] rounded-md p-4">
+        <TagInput
+          tags={tags}
+          onChange={setTags}
+          suggestions={tagSuggestions}
+          onSuggest={suggestTags}
+          suggesting={suggesting}
+          type="post"
+        />
+      </div>
       <div className="flex items-center gap-4 mt-4">
         <div className="flex gap-3">
           <button onClick={() => save(false)} disabled={saving}
