@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+export const maxDuration = 30
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -38,9 +40,10 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model: 'ep-m-20260305214148-kttmf',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 100,
+        max_tokens: 200,
+        thinking: { type: 'disabled' },
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(25000),
     })
 
     if (!res.ok) {
