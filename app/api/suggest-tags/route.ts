@@ -52,7 +52,11 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await res.json()
-    const text: string = data?.output?.[0]?.content?.[0]?.text ?? ''
+    // Find the message output (type === 'message'), skip reasoning
+    const messageOutput = (data?.output ?? []).find(
+      (item: { type: string }) => item.type === 'message'
+    )
+    const text: string = messageOutput?.content?.[0]?.text ?? ''
     const tags = text
       .split(/[,，、\n]/)
       .map((t: string) => t.trim().replace(/^[#\s]+/, ''))
