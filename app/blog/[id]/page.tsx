@@ -4,6 +4,7 @@ import Link from 'next/link'
 import BackButton from './BackButton'
 import LikeButton from './LikeButton'
 import CommentSection from './CommentSection'
+import PostContent from '@/app/components/PostContent'
 
 export default async function BlogDetailPage({
   params,
@@ -93,10 +94,7 @@ export default async function BlogDetailPage({
             </Link>
           )}
         </div>
-        <div
-          className="p-6 prose max-w-none text-[#1f2328] prose-headings:text-[#1f2328] prose-a:text-[#0969da] prose-code:text-[#cf222e] prose-code:bg-[#f6f8fa] prose-code:px-1 prose-code:rounded prose-pre:bg-[#1f2328]"
-          dangerouslySetInnerHTML={{ __html: post.content }}
-        />
+        <PostContent html={post.content} />
         <div className="px-6 py-4 border-t border-[#d0d7de]">
           <LikeButton postId={post.id} initialCount={likeCount ?? 0} />
         </div>

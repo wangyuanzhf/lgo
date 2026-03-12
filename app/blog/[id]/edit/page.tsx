@@ -3,6 +3,7 @@
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
+import Mathematics from '@tiptap/extension-mathematics'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -76,7 +77,7 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
 
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: [StarterKit, Image],
+    extensions: [StarterKit, Image, Mathematics],
     content: '',
     editorProps: {
       attributes: { class: 'prose max-w-none p-4 min-h-[400px] focus:outline-none text-[#1f2328]' },
