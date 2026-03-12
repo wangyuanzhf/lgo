@@ -26,7 +26,10 @@ export default async function AppShell({
     pathname.startsWith('/blog')               ? 'blog' :
     pathname.startsWith('/notes')              ? 'notes' :
     pathname.startsWith('/mindmap')            ? 'mindmap' :
+    pathname.startsWith('/admin')              ? 'admin' :
     'dashboard'
+
+  const isAdmin = user.id === process.env.LGO_OWNER_USER_ID
 
   // 查当前用户的 username
   const { data: profile } = await supabase
@@ -159,6 +162,23 @@ export default async function AppShell({
                     <path d="M10.561 8.073a6.005 6.005 0 0 1 3.432 5.142.75.75 0 1 1-1.498.07 4.5 4.5 0 0 0-8.99 0 .75.75 0 0 1-1.498-.07 6.004 6.004 0 0 1 3.431-5.142 3.999 3.999 0 1 1 5.123 0ZM10.5 5a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z"/>
                   </svg>
                   我的主页
+                </Link>
+              </li>
+            )}
+            {isAdmin && (
+              <li>
+                <Link
+                  href="/admin"
+                  className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                    activeSection === 'admin'
+                      ? 'bg-[#eef1f4] text-[#1f2328] font-medium'
+                      : 'text-[#57606a] hover:bg-[#eef1f4] hover:text-[#1f2328]'
+                  }`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M7.467.133a1.748 1.748 0 0 1 1.066 0l5.25 1.68A1.75 1.75 0 0 1 15 3.48V7c0 1.566-.32 3.182-1.303 4.682-.983 1.498-2.585 2.813-5.032 3.855a1.697 1.697 0 0 1-1.33 0c-2.447-1.042-4.049-2.357-5.032-3.855C1.32 10.182 1 8.566 1 7V3.48a1.75 1.75 0 0 1 1.217-1.667Zm.61 1.429a.25.25 0 0 0-.153 0l-5.25 1.68a.25.25 0 0 0-.174.238V7c0 1.358.275 2.666 1.057 3.86.784 1.194 2.121 2.34 4.366 3.297a.196.196 0 0 0 .154 0c2.245-.956 3.582-2.104 4.366-3.298C13.225 9.666 13.5 8.36 13.5 7V3.48a.25.25 0 0 0-.174-.237Z"/>
+                  </svg>
+                  管理后台
                 </Link>
               </li>
             )}

@@ -64,6 +64,8 @@ export default function NewMindmapPage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
+      const { data: profile } = await supabase.from('profiles').select('is_banned').eq('id', user.id).single()
+      if (profile?.is_banned) { setError('账号已被禁言，无法发布内容'); setSaving(false); return }
       const data = mindRef.current.getData()
       const { data: saved, error: err } = await supabase.from('mindmaps')
         .insert({ user_id: user.id, title: title.trim(), data: data as unknown as Record<string, unknown>, is_public: isPublic, tags })

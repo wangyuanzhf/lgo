@@ -58,6 +58,8 @@ export default function NotesPage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
+      const { data: profile } = await supabase.from('profiles').select('is_banned').eq('id', user.id).single()
+      if (profile?.is_banned) { alert('账号已被禁言，无法发布内容'); return }
       const { data, error } = await supabase
         .from('notes').insert({ user_id: user.id, content: text, is_public: isPublic })
         .select('id, content, created_at, is_public').single()
