@@ -6,15 +6,34 @@ export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) {
-    redirect('/login')
-  }
+  if (!user) redirect('/login')
 
   const { data: profile } = await supabase
     .from('profiles')
     .select('username')
     .eq('id', user.id)
     .single()
+
+  const [
+    { count: postCount },
+    { count: noteCount },
+    { count: mindmapCount },
+    { data: viewData },
+  ] = await Promise.all([
+    supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('published', true),
+    supabase.from('notes').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
+    supabase.from('mindmaps').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
+    supabase.from('posts').select('view_count').eq('user_id', user.id),
+  ])
+
+  const totalViews = (viewData ?? []).reduce((sum, p) => sum + (p.view_count ?? 0), 0)
+
+  const stats = [
+    { label: '已发布文章', value: postCount ?? 0, color: 'text-[#0969da]', bg: 'bg-[#ddf4ff]' },
+    { label: '随笔', value: noteCount ?? 0, color: 'text-[#1a7f37]', bg: 'bg-[#dafbe1]' },
+    { label: '思维导图', value: mindmapCount ?? 0, color: 'text-[#7d4e00]', bg: 'bg-[#fff8c5]' },
+    { label: '累计阅读', value: totalViews, color: 'text-[#6e40c9]', bg: 'bg-[#fbefff]' },
+  ]
 
   const features = [
     {
@@ -28,6 +47,7 @@ export default async function DashboardPage() {
       ),
       color: 'text-[#0969da]',
       bg: 'bg-[#ddf4ff]',
+      action: '写文章 →',
     },
     {
       href: '/notes',
@@ -40,6 +60,7 @@ export default async function DashboardPage() {
       ),
       color: 'text-[#1a7f37]',
       bg: 'bg-[#dafbe1]',
+      action: '记随笔 →',
     },
     {
       href: '/mindmap',
@@ -52,6 +73,7 @@ export default async function DashboardPage() {
       ),
       color: 'text-[#7d4e00]',
       bg: 'bg-[#fff8c5]',
+      action: '新建导图 →',
     },
   ]
 
@@ -64,10 +86,7 @@ export default async function DashboardPage() {
           {profile && (
             <>
               <span className="text-[#d0d7de]">·</span>
-              <Link
-                href={`/u/${profile.username}`}
-                className="text-sm text-[#0969da] hover:underline"
-              >
+              <Link href={`/u/${profile.username}`} className="text-sm text-[#0969da] hover:underline">
                 我的主页 @{profile.username}
               </Link>
             </>
@@ -75,6 +94,17 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {/* 统计条 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        {stats.map((s) => (
+          <div key={s.label} className="bg-white border border-[#d0d7de] rounded-md px-4 py-3 flex items-center gap-3">
+            <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+            <div className="text-xs text-[#57606a] leading-tight">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 功能卡片 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {features.map((f) => (
           <Link
@@ -86,7 +116,8 @@ export default async function DashboardPage() {
               {f.icon}
             </div>
             <h2 className="text-base font-semibold text-[#1f2328] mb-2 group-hover:text-[#0969da]">{f.title}</h2>
-            <p className="text-sm text-[#57606a] leading-relaxed">{f.description}</p>
+            <p className="text-sm text-[#57606a] leading-relaxed mb-4">{f.description}</p>
+            <span className={`text-xs font-medium ${f.color}`}>{f.action}</span>
           </Link>
         ))}
       </div>

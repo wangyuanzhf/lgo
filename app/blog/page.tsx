@@ -19,7 +19,7 @@ export default async function BlogPage({
 
   let query = supabase
     .from('posts')
-    .select('id, title, published, created_at, updated_at, tags')
+    .select('id, title, content, published, created_at, updated_at, tags, view_count, is_public')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
 
@@ -34,7 +34,7 @@ export default async function BlogPage({
 
   // collect all tags for the filter bar
   const { data: allPosts } = await supabase
-    .from('posts').select('tags').eq('user_id', user.id)
+    .from('posts').select('tags, view_count').eq('user_id', user.id)
   const allTags = Array.from(new Set((allPosts ?? []).flatMap((p: { tags: string[] }) => p.tags ?? [])))
 
   return (
@@ -99,55 +99,68 @@ export default async function BlogPage({
         </div>
       ) : (
         <div className="space-y-3">
-          {posts.map((post) => (
-            <div
-              key={post.id}
-              className="bg-white border border-[#d0d7de] rounded-md p-4 flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <span
-                  className={`shrink-0 text-xs px-2 py-0.5 rounded-full border ${
-                    post.published
-                      ? 'bg-[#dafbe1] text-[#1a7f37] border-[#82e19b]'
-                      : 'bg-[#f6f8fa] text-[#57606a] border-[#d0d7de]'
-                  }`}
-                >
-                  {post.published ? '已发布' : '草稿'}
-                </span>
-                <Link
-                  href={`/blog/${post.id}`}
-                  className="text-sm font-medium text-[#1f2328] hover:text-[#0969da] truncate"
-                >
-                  {post.title}
-                </Link>
-                {(post.tags ?? []).length > 0 && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    {(post.tags as string[]).map((t) => (
-                      <Link
-                        key={t}
-                        href={`/blog?tag=${encodeURIComponent(t)}`}
-                        className="text-xs px-1.5 py-0.5 rounded-full bg-[#ddf4ff] text-[#0969da] border border-[#b6e3ff] hover:bg-[#b6e3ff] transition-colors"
-                      >
-                        {t}
-                      </Link>
-                    ))}
+          {posts.map((post) => {
+            // 从 HTML 提取纯文本摘要
+            const plainText = post.content?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ?? ''
+            const excerpt = plainText.length > 120 ? plainText.slice(0, 120) + '...' : plainText
+            return (
+              <div
+                key={post.id}
+                className="bg-white border border-[#d0d7de] rounded-md p-4 hover:shadow-sm transition-shadow"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full border ${
+                        post.published
+                          ? 'bg-[#dafbe1] text-[#1a7f37] border-[#82e19b]'
+                          : 'bg-[#f6f8fa] text-[#57606a] border-[#d0d7de]'
+                      }`}>
+                        {post.published ? '已发布' : '草稿'}
+                      </span>
+                      {!post.is_public && (
+                        <span className="shrink-0 text-xs px-2 py-0.5 rounded-full border bg-[#f6f8fa] text-[#57606a] border-[#d0d7de]">私密</span>
+                      )}
+                      {(post.tags ?? []).length > 0 && (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {(post.tags as string[]).map((t) => (
+                            <Link key={t} href={`/blog?tag=${encodeURIComponent(t)}`}
+                              className="text-xs px-1.5 py-0.5 rounded-full bg-[#ddf4ff] text-[#0969da] border border-[#b6e3ff] hover:bg-[#b6e3ff] transition-colors">
+                              {t}
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <Link href={`/blog/${post.id}`}
+                      className="text-sm font-semibold text-[#1f2328] hover:text-[#0969da] leading-snug">
+                      {post.title}
+                    </Link>
+                    {excerpt && (
+                      <p className="text-xs text-[#57606a] mt-1 leading-relaxed line-clamp-2">{excerpt}</p>
+                    )}
                   </div>
-                )}
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <div className="flex items-center gap-3">
+                      <span className="flex items-center gap-1 text-xs text-[#57606a]">
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                          <path d="M8 2c1.981 0 3.671.992 4.933 2.078 1.27 1.091 2.187 2.345 2.637 3.023a1.62 1.62 0 0 1 0 1.798c-.45.678-1.367 1.932-2.637 3.023C11.67 13.008 9.981 14 8 14c-1.981 0-3.671-.992-4.933-2.078C1.797 10.83.88 9.576.43 8.898a1.62 1.62 0 0 1 0-1.798c.45-.677 1.367-1.931 2.637-3.022C4.33 2.992 6.019 2 8 2ZM1.679 7.932a.12.12 0 0 0 0 .136c.411.622 1.241 1.75 2.366 2.717C5.176 11.758 6.527 12.5 8 12.5c1.473 0 2.825-.742 3.955-1.715 1.124-.967 1.954-2.096 2.366-2.717a.12.12 0 0 0 0-.136c-.412-.621-1.242-1.75-2.366-2.717C10.824 4.242 9.473 3.5 8 3.5c-1.473 0-2.825.742-3.955 1.715-1.124.967-1.954 2.096-2.366 2.717ZM8 10a2 2 0 1 1-.001-3.999A2 2 0 0 1 8 10Z"/>
+                        </svg>
+                        {post.view_count ?? 0}
+                      </span>
+                      <span className="text-xs text-[#57606a]">
+                        {new Date(post.updated_at).toLocaleDateString('zh-CN')}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Link href={`/blog/${post.id}/edit`} className="text-xs text-[#0969da] hover:underline">编辑</Link>
+                      <DeleteButton id={post.id} kind="post" />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-3 shrink-0 ml-4">
-                <span className="text-xs text-[#57606a]">
-                  {new Date(post.updated_at).toLocaleDateString('zh-CN')}
-                </span>
-                <Link
-                  href={`/blog/${post.id}/edit`}
-                  className="text-xs text-[#0969da] hover:underline"
-                >
-                  编辑
-                </Link>
-                <DeleteButton id={post.id} kind="post" />
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
