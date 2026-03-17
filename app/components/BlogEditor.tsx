@@ -4,12 +4,30 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Mathematics from '@tiptap/extension-mathematics'
+import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { marked } from 'marked'
 import TurndownService from 'turndown'
 import { uploadImageToStorage } from '@/app/blog/[id]/hooks/useImageUpload'
 
 const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
+
+// turndown 默认不支持表格，添加 GFM 表格规则
+turndown.addRule('table', {
+  filter: 'table',
+  replacement(_content, node) {
+    const table = node as HTMLTableElement
+    const rows = Array.from(table.querySelectorAll('tr'))
+    if (!rows.length) return ''
+    const toMd = (cells: Element[]) =>
+      '| ' + cells.map((c) => (c.textContent ?? '').replace(/\n/g, ' ').trim()).join(' | ') + ' |'
+    const header = rows[0]
+    const headerCells = Array.from(header.querySelectorAll('th, td'))
+    const sep = '| ' + headerCells.map(() => '---').join(' | ') + ' |'
+    const body = rows.slice(1).map((r) => toMd(Array.from(r.querySelectorAll('td, th')))).join('\n')
+    return '\n\n' + toMd(headerCells) + '\n' + sep + (body ? '\n' + body : '') + '\n\n'
+  },
+})
 
 type Mode = 'rich' | 'markdown'
 
@@ -116,10 +134,18 @@ export function useBlogEditor(initialHtml: string = '') {
 
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: [StarterKit, Image, Mathematics],
+    extensions: [
+      StarterKit,
+      Image,
+      Mathematics,
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
+    ],
     content: initialHtml,
     editorProps: {
-      attributes: { class: 'prose max-w-none p-4 min-h-[400px] focus:outline-none text-[#1f2328]' },
+      attributes: { class: 'prose max-w-none p-4 min-h-[400px] focus:outline-none text-[#1f2328] [&_table]:border-collapse [&_table]:w-full [&_th]:border [&_th]:border-[#d0d7de] [&_th]:bg-[#f6f8fa] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_td]:border [&_td]:border-[#d0d7de] [&_td]:px-3 [&_td]:py-2' },
     },
   })
 

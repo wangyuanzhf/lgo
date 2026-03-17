@@ -81,7 +81,7 @@ export default function PostContent({ html }: { html: string }) {
   return (
     <div
       ref={ref}
-      className="p-6 prose max-w-none text-[#1f2328] prose-headings:text-[#1f2328] prose-a:text-[#0969da] prose-code:text-[#cf222e] prose-code:bg-[#f6f8fa] prose-code:px-1 prose-code:rounded prose-pre:bg-[#1f2328] [&_pre_code]:text-inherit [&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_pre_code]:rounded-none"
+      className="p-6 prose max-w-none text-[#1f2328] prose-headings:text-[#1f2328] prose-a:text-[#0969da] prose-code:text-[#cf222e] prose-code:bg-[#f6f8fa] prose-code:px-1 prose-code:rounded prose-pre:bg-[#1f2328] [&_pre_code]:text-inherit [&_pre_code]:bg-transparent [&_pre_code]:px-0 [&_pre_code]:rounded-none [&_table]:border-collapse [&_table]:w-full [&_th]:border [&_th]:border-[#d0d7de] [&_th]:bg-[#f6f8fa] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_td]:border [&_td]:border-[#d0d7de] [&_td]:px-3 [&_td]:py-2"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )
