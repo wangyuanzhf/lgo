@@ -281,7 +281,7 @@ export function useBlogEditor(initialHtml: string = '') {
     content: initialHtml,
     editorProps: {
       attributes: {
-        class: 'prose max-w-none p-4 min-h-[400px] focus:outline-none text-[#1f2328] [&_table]:border-collapse [&_table]:w-auto [&_table]:min-w-[200px] [&_th]:border [&_th]:border-[#d0d7de] [&_th]:bg-[#f6f8fa] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_td]:border [&_td]:border-[#d0d7de] [&_td]:px-3 [&_td]:py-2',
+        class: 'prose max-w-none p-4 min-h-[400px] focus:outline-none text-[#1f2328] [&_table]:border-collapse [&_table]:w-auto [&_table]:min-w-[200px] [&_th]:border [&_th]:border-[#d0d7de] [&_th]:bg-[#f6f8fa] [&_th]:px-4 [&_th]:py-1.5 [&_th]:text-left [&_th]:min-w-[150px] [&_th]:cursor-text [&_th]:align-top [&_td]:border [&_td]:border-[#d0d7de] [&_td]:px-4 [&_td]:py-1.5 [&_td]:min-w-[150px] [&_td]:cursor-text [&_td]:align-top [&_table_p]:my-0 [&_table_p]:leading-normal',
       },
     },
   })
@@ -415,7 +415,24 @@ export default function BlogEditor({
         </div>
       )}
       {mode === 'rich' ? (
-        <EditorContent editor={editor!} />
+        <>
+          <style>{`
+            .tiptap table td,
+            .tiptap table th {
+              position: relative;
+            }
+            .tiptap table td.selectedCell,
+            .tiptap table th.selectedCell {
+              background-color: #ddf4ff !important;
+            }
+            .tiptap table td > *,
+            .tiptap table th > * {
+              margin-top: 0 !important;
+              margin-bottom: 0 !important;
+            }
+          `}</style>
+          <EditorContent editor={editor!} />
+        </>
       ) : (
         <textarea
           ref={mdRef}
