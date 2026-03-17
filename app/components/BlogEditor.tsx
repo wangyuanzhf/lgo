@@ -273,7 +273,7 @@ export function useBlogEditor(initialHtml: string = '') {
       StarterKit,
       Image,
       Mathematics,
-      Table.configure({ resizable: false }),
+      Table.configure({ resizable: true, cellMinWidth: 60 }),
       TableRow,
       TableHeader,
       TableCell,
@@ -281,7 +281,7 @@ export function useBlogEditor(initialHtml: string = '') {
     content: initialHtml,
     editorProps: {
       attributes: {
-        class: 'prose max-w-none p-4 min-h-[400px] focus:outline-none text-[#1f2328] [&_table]:border-collapse [&_table]:w-auto [&_table]:min-w-[200px] [&_th]:border [&_th]:border-[#d0d7de] [&_th]:bg-[#f6f8fa] [&_th]:px-4 [&_th]:py-1.5 [&_th]:text-left [&_th]:min-w-[150px] [&_th]:cursor-text [&_th]:align-top [&_td]:border [&_td]:border-[#d0d7de] [&_td]:px-4 [&_td]:py-1.5 [&_td]:min-w-[150px] [&_td]:cursor-text [&_td]:align-top [&_table_p]:my-0 [&_table_p]:leading-normal',
+        class: 'prose max-w-none p-4 min-h-[400px] focus:outline-none text-[#1f2328] [&_table]:border-collapse [&_table]:w-auto [&_table]:table-fixed [&_th]:border [&_th]:border-[#d0d7de] [&_th]:bg-[#f6f8fa] [&_th]:px-4 [&_th]:py-1.5 [&_th]:text-left [&_th]:cursor-text [&_th]:align-top [&_th]:overflow-hidden [&_td]:border [&_td]:border-[#d0d7de] [&_td]:px-4 [&_td]:py-1.5 [&_td]:cursor-text [&_td]:align-top [&_td]:overflow-hidden [&_table_p]:my-0 [&_table_p]:leading-normal',
       },
     },
   })
@@ -372,6 +372,50 @@ export default function BlogEditor({
     }
   }, [editor, mode, userId, setUploading])
 
+  // 行高拖拽
+  useEffect(() => {
+    if (!editor || mode !== 'rich') return
+    const dom = editor.view.dom as HTMLElement
+
+    // 给所有 tr 注入拖拽手柄（用 MutationObserver 监听表格变化）
+    const injectHandles = () => {
+      dom.querySelectorAll<HTMLTableRowElement>('table tr').forEach((tr) => {
+        if (tr.querySelector('.row-resize-handle')) return
+        const handle = document.createElement('div')
+        handle.className = 'row-resize-handle'
+        tr.appendChild(handle)
+
+        handle.addEventListener('mousedown', (e: MouseEvent) => {
+          e.preventDefault()
+          handle.classList.add('dragging')
+          const startY = e.clientY
+          const cells = Array.from(tr.querySelectorAll<HTMLElement>('td, th'))
+          const startHeights = cells.map((c) => c.getBoundingClientRect().height)
+
+          const onMove = (ev: MouseEvent) => {
+            const delta = ev.clientY - startY
+            cells.forEach((c, i) => {
+              const newH = Math.max(28, startHeights[i] + delta)
+              c.style.height = `${newH}px`
+            })
+          }
+          const onUp = () => {
+            handle.classList.remove('dragging')
+            document.removeEventListener('mousemove', onMove)
+            document.removeEventListener('mouseup', onUp)
+          }
+          document.addEventListener('mousemove', onMove)
+          document.addEventListener('mouseup', onUp)
+        })
+      })
+    }
+
+    injectHandles()
+    const observer = new MutationObserver(injectHandles)
+    observer.observe(dom, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [editor, mode])
+
   // Markdown 模式下粘贴图片
   const handleMdPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items
@@ -417,18 +461,70 @@ export default function BlogEditor({
       {mode === 'rich' ? (
         <>
           <style>{`
+            /* 列宽拖拽手柄（TipTap resizable 内置） */
+            .tiptap .column-resize-handle {
+              position: absolute;
+              right: -2px;
+              top: 0;
+              bottom: 0;
+              width: 4px;
+              background-color: #0969da;
+              opacity: 0;
+              cursor: col-resize;
+              transition: opacity 0.15s;
+              z-index: 10;
+            }
+            .tiptap table:hover .column-resize-handle,
+            .tiptap .column-resize-handle:hover {
+              opacity: 0.5;
+            }
+            .tiptap .column-resize-handle:active,
+            .tiptap.resize-cursor .column-resize-handle {
+              opacity: 1;
+            }
+            .tiptap.resize-cursor {
+              cursor: col-resize;
+            }
+
+            /* 表格整体 */
+            .tiptap table {
+              position: relative;
+            }
             .tiptap table td,
             .tiptap table th {
               position: relative;
             }
+
+            /* 选中单元格高亮 */
             .tiptap table td.selectedCell,
             .tiptap table th.selectedCell {
               background-color: #ddf4ff !important;
             }
+
+            /* 消除 prose p margin */
             .tiptap table td > *,
             .tiptap table th > * {
               margin-top: 0 !important;
               margin-bottom: 0 !important;
+            }
+
+            /* 行高拖拽手柄 */
+            .tiptap table tr {
+              position: relative;
+            }
+            .row-resize-handle {
+              position: absolute;
+              left: 0;
+              right: 0;
+              bottom: -3px;
+              height: 6px;
+              cursor: row-resize;
+              z-index: 10;
+              background: transparent;
+            }
+            .row-resize-handle:hover,
+            .row-resize-handle.dragging {
+              background: linear-gradient(transparent 2px, #0969da 2px, #0969da 4px, transparent 4px);
             }
           `}</style>
           <EditorContent editor={editor!} />
