@@ -57,7 +57,9 @@ export default function OutlineEditor({ nodes, onChange }: Props) {
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      const newNode: OutlineNode = { id: genId(), depth: node.depth, text: '' }
+      // 非根节点：最小 depth 为 1（不能与中心主题同级）
+      const newDepth = idx === 0 ? 1 : Math.max(1, node.depth)
+      const newNode: OutlineNode = { id: genId(), depth: newDepth, text: '' }
       const next = [...nodes]
       next.splice(idx + 1, 0, newNode)
       onChange(next)
@@ -78,7 +80,9 @@ export default function OutlineEditor({ nodes, onChange }: Props) {
 
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault()
-      if (node.depth > 0) {
+      // 非第一行最小 depth = 1，第一行保持 0
+      const minDepth = idx === 0 ? 0 : 1
+      if (node.depth > minDepth) {
         onChange(nodes.map((n, i) => i === idx ? { ...n, depth: n.depth - 1 } : n))
       }
       return
@@ -254,6 +258,12 @@ export default function OutlineEditor({ nodes, onChange }: Props) {
                 }}
                 placeholder={idx === 0 ? '中心主题' : '节点内容...'}
               />
+              {/* 第一行"中心"标签 */}
+              {idx === 0 && (
+                <span className="ml-2 shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-[#fff8c5] text-[#7d4e00] border border-[#d4a72c] leading-none select-none">
+                  中心
+                </span>
+              )}
             </div>
           )
         })}
@@ -263,7 +273,9 @@ export default function OutlineEditor({ nodes, onChange }: Props) {
           type="button"
           onClick={() => {
             const last = nodes[nodes.length - 1]
-            const newNode: OutlineNode = { id: genId(), depth: last?.depth ?? 0, text: '' }
+            // 新节点至少 depth 1，不与中心主题同级
+            const newDepth = Math.max(1, last?.depth ?? 1)
+            const newNode: OutlineNode = { id: genId(), depth: newDepth, text: '' }
             const next = [...nodes, newNode]
             onChange(next)
             requestAnimationFrame(() => inputRefs.current[newNode.id]?.focus())
