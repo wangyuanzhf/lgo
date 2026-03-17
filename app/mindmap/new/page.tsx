@@ -7,12 +7,10 @@ import { createClient } from '@/lib/supabase/client'
 import type { MindElixirInstance, MindElixirData } from 'mind-elixir'
 import VisibilityToggle from '@/app/components/VisibilityToggle'
 import TagInput from '@/app/components/TagInput'
-import OutlineEditor from '../OutlineEditor'
-import { outlineToMind, mindToOutline } from '../outlineUtils'
+import OutlineEditor, { type OutlineNode } from '../OutlineEditor'
+import { outlineToMind, defaultNodes } from '../outlineUtils'
 
 type ViewMode = 'outline' | 'mindmap'
-
-const DEFAULT_OUTLINE = `中心主题\n\t分支 1\n\t分支 2`
 
 export default function NewMindmapPage() {
   const router = useRouter()
@@ -26,7 +24,7 @@ export default function NewMindmapPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('outline')
-  const [outline, setOutline] = useState(DEFAULT_OUTLINE)
+  const [nodes, setNodes] = useState<OutlineNode[]>(defaultNodes)
 
   useEffect(() => {
     const supabase = createClient()
@@ -41,10 +39,7 @@ export default function NewMindmapPage() {
   const initMind = useCallback(async (data: MindElixirData) => {
     if (!containerRef.current) return
     const MindElixirLib = (await import('mind-elixir')).default
-    if (mindRef.current) {
-      mindRef.current.init(data)
-      return
-    }
+    if (mindRef.current) { mindRef.current.init(data); return }
     const instance = new MindElixirLib({
       el: containerRef.current,
       direction: MindElixirLib.SIDE,
@@ -56,21 +51,22 @@ export default function NewMindmapPage() {
 
   const switchToMindmap = useCallback(async () => {
     setViewMode('mindmap')
-    const data = outlineToMind(outline)
+    const data = outlineToMind(nodes)
     requestAnimationFrame(() => initMind(data))
-  }, [outline, initMind])
+  }, [nodes, initMind])
 
   const switchToOutline = useCallback(() => {
     if (mindRef.current) {
-      setOutline(mindToOutline(mindRef.current.getData()))
+      const { mindToOutline } = require('../outlineUtils')
+      setNodes(mindToOutline(mindRef.current.getData()))
     }
     setViewMode('outline')
   }, [])
 
   const getData = useCallback((): MindElixirData => {
     if (viewMode === 'mindmap' && mindRef.current) return mindRef.current.getData()
-    return outlineToMind(outline)
-  }, [viewMode, outline])
+    return outlineToMind(nodes)
+  }, [viewMode, nodes])
 
   const save = async () => {
     if (!title.trim()) { setError('请输入标题'); return }
@@ -106,9 +102,7 @@ export default function NewMindmapPage() {
       setTags((prev) => [...prev, ...newTags].slice(0, 10))
     } catch {
       alert('大模型不可用')
-    } finally {
-      setSuggesting(false)
-    }
+    } finally { setSuggesting(false) }
   }
 
   return (
@@ -118,7 +112,6 @@ export default function NewMindmapPage() {
         <input type="text" value={title} onChange={(e) => setTitle(e.target.value)}
           className="flex-1 text-base font-semibold text-[#1f2328] border border-[#d0d7de] rounded-md px-3 py-1.5 focus:outline-none focus:border-[#0969da]" />
         {error && <span className="text-sm text-red-600">{error}</span>}
-
         <div className="flex rounded-md border border-[#d0d7de] overflow-hidden text-xs shrink-0">
           <button type="button" onClick={() => viewMode === 'mindmap' && switchToOutline()}
             className={`px-3 py-1.5 transition-colors ${viewMode === 'outline' ? 'bg-[#1f2328] text-white' : 'bg-white text-[#57606a] hover:bg-[#f6f8fa]'}`}>
@@ -129,20 +122,17 @@ export default function NewMindmapPage() {
             ✦ 导图
           </button>
         </div>
-
         <VisibilityToggle value={isPublic} onChange={setIsPublic} />
         <button onClick={save} disabled={saving}
           className="px-4 py-1.5 text-sm bg-[#1f2328] text-white rounded-md hover:bg-[#2d3139] transition-colors disabled:opacity-50">
           {saving ? '保存中...' : '保存'}
         </button>
       </div>
-
       <div className="mb-3 shrink-0">
         <TagInput tags={tags} onChange={setTags} suggestions={tagSuggestions} onSuggest={suggestTags} suggesting={suggesting} type="mindmap" />
       </div>
-
       <div className="flex-1 min-h-0 bg-white border border-[#d0d7de] rounded-md overflow-hidden">
-        {viewMode === 'outline' && <OutlineEditor value={outline} onChange={setOutline} />}
+        {viewMode === 'outline' && <OutlineEditor nodes={nodes} onChange={setNodes} />}
         <div ref={containerRef} style={{ width: '100%', height: '100%', display: viewMode === 'mindmap' ? 'block' : 'none' }} />
       </div>
     </div>
