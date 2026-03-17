@@ -1,6 +1,6 @@
 'use client'
 
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, useEditorState } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Mathematics from '@tiptap/extension-mathematics'
@@ -40,7 +40,6 @@ function TablePicker({ onInsert }: { onInsert: (rows: number, cols: number) => v
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  // 点击外部关闭
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
@@ -64,8 +63,10 @@ function TablePicker({ onInsert }: { onInsert: (rows: number, cols: number) => v
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-[#d0d7de] rounded-md shadow-lg p-3 select-none"
-          style={{ minWidth: 200 }}>
+        <div
+          className="absolute left-0 top-full mt-1 z-50 bg-white border border-[#d0d7de] rounded-md shadow-lg p-3 select-none"
+          style={{ minWidth: 220 }}
+        >
           <p className="text-xs text-[#57606a] mb-2 text-center">
             {rows > 0 && cols > 0 ? `${rows} × ${cols}` : '移动选择行列数'}
           </p>
@@ -83,11 +84,7 @@ function TablePicker({ onInsert }: { onInsert: (rows: number, cols: number) => v
                     }`}
                     onMouseEnter={() => setHovered({ r: r + 1, c: c + 1 })}
                     onMouseLeave={() => setHovered(null)}
-                    onClick={() => {
-                      onInsert(r + 1, c + 1)
-                      setOpen(false)
-                      setHovered(null)
-                    }}
+                    onClick={() => { onInsert(r + 1, c + 1); setOpen(false); setHovered(null) }}
                   />
                 )
               })
@@ -127,26 +124,35 @@ function CustomTableInput({ onInsert }: { onInsert: (rows: number, cols: number)
   )
 }
 
-// ── 表格上下文操作栏 ───────────────────────────────────────────────────────────
-function TableContextBar({ editor }: { editor: ReturnType<typeof useEditor> }) {
-  if (!editor.isActive('table')) return null
-  const btnCls = "px-2 py-0.5 text-xs border border-[#d0d7de] rounded bg-white text-[#57606a] hover:bg-[#f6f8fa] transition-colors"
+// ── 表格浮动操作条（用 useEditorState 响应式驱动）────────────────────────────
+function TableFloatBar({ editor }: { editor: ReturnType<typeof useEditor> }) {
+  // useEditorState 订阅光标状态，任何 selectionUpdate / transaction 都会重渲染
+  const { isInTable } = useEditorState({
+    editor,
+    selector: (ctx) => ({
+      isInTable: ctx.editor.isActive('table'),
+    }),
+  })
+
+  if (!isInTable) return null
+
+  const b = "px-2 py-1 text-xs border border-[#d0d7de] rounded bg-white text-[#57606a] hover:bg-[#f0f6ff] hover:border-[#0969da] transition-colors whitespace-nowrap"
+  const danger = "px-2 py-1 text-xs border border-[#cf222e] rounded bg-white text-[#cf222e] hover:bg-[#fff0f0] transition-colors whitespace-nowrap"
+  const sep = <div className="w-px bg-[#d0d7de] self-stretch" />
+
   return (
-    <div className="flex flex-wrap items-center gap-1 px-3 py-1.5 bg-[#fffbeb] border-b border-[#d4a72c] text-xs">
-      <span className="text-[#7d4e00] mr-1 font-medium">表格操作:</span>
-      <button type="button" className={btnCls} onClick={() => editor.chain().focus().addRowBefore().run()}>↑ 上方插行</button>
-      <button type="button" className={btnCls} onClick={() => editor.chain().focus().addRowAfter().run()}>↓ 下方插行</button>
-      <button type="button" className={btnCls} onClick={() => editor.chain().focus().deleteRow().run()}>删除行</button>
-      <div className="w-px bg-[#d0d7de] mx-0.5 h-4" />
-      <button type="button" className={btnCls} onClick={() => editor.chain().focus().addColumnBefore().run()}>← 左侧插列</button>
-      <button type="button" className={btnCls} onClick={() => editor.chain().focus().addColumnAfter().run()}>→ 右侧插列</button>
-      <button type="button" className={btnCls} onClick={() => editor.chain().focus().deleteColumn().run()}>删除列</button>
-      <div className="w-px bg-[#d0d7de] mx-0.5 h-4" />
-      <button type="button"
-        className="px-2 py-0.5 text-xs border border-[#cf222e] rounded bg-white text-[#cf222e] hover:bg-[#fff0f0] transition-colors"
-        onClick={() => editor.chain().focus().deleteTable().run()}>
-        删除表格
-      </button>
+    <div className="flex flex-wrap items-center gap-1 px-3 py-1.5 bg-[#f0f6ff] border-b border-[#b6d4fb] text-xs">
+      <span className="text-[#0969da] font-medium mr-0.5 shrink-0">行:</span>
+      <button type="button" className={b} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().addRowBefore().run() }}>↑ 上方插入</button>
+      <button type="button" className={b} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().addRowAfter().run() }}>↓ 下方插入</button>
+      <button type="button" className={b} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().deleteRow().run() }}>删除行</button>
+      {sep}
+      <span className="text-[#0969da] font-medium mr-0.5 shrink-0">列:</span>
+      <button type="button" className={b} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().addColumnBefore().run() }}>← 左侧插入</button>
+      <button type="button" className={b} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().addColumnAfter().run() }}>→ 右侧插入</button>
+      <button type="button" className={b} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().deleteColumn().run() }}>删除列</button>
+      {sep}
+      <button type="button" className={danger} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().deleteTable().run() }}>删除表格</button>
     </div>
   )
 }
@@ -199,8 +205,8 @@ function MenuBar({
 
   return (
     <div className="border-b border-[#d0d7de]">
+      {/* 主工具栏 */}
       <div className="flex flex-wrap gap-1 p-2 bg-[#f6f8fa]">
-        {/* 模式切换 */}
         {modeBtn('rich', '富文本')}
         {modeBtn('markdown', 'Markdown')}
         <div className="w-px bg-[#d0d7de] mx-1" />
@@ -249,8 +255,8 @@ function MenuBar({
           </span>
         )}
       </div>
-      {/* 表格上下文操作栏 */}
-      {mode === 'rich' && editor && <TableContextBar editor={editor} />}
+      {/* 表格浮动操作条：响应式，光标在表格内时自动出现 */}
+      {mode === 'rich' && editor && <TableFloatBar editor={editor} />}
     </div>
   )
 }
@@ -274,7 +280,9 @@ export function useBlogEditor(initialHtml: string = '') {
     ],
     content: initialHtml,
     editorProps: {
-      attributes: { class: 'prose max-w-none p-4 min-h-[400px] focus:outline-none text-[#1f2328] [&_table]:border-collapse [&_table]:w-full [&_th]:border [&_th]:border-[#d0d7de] [&_th]:bg-[#f6f8fa] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_td]:border [&_td]:border-[#d0d7de] [&_td]:px-3 [&_td]:py-2' },
+      attributes: {
+        class: 'prose max-w-none p-4 min-h-[400px] focus:outline-none text-[#1f2328] [&_table]:border-collapse [&_table]:w-auto [&_table]:min-w-[200px] [&_th]:border [&_th]:border-[#d0d7de] [&_th]:bg-[#f6f8fa] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_td]:border [&_td]:border-[#d0d7de] [&_td]:px-3 [&_td]:py-2',
+      },
     },
   })
 
@@ -290,11 +298,9 @@ export function useBlogEditor(initialHtml: string = '') {
   const switchMode = useCallback(async (newMode: Mode) => {
     if (newMode === mode) return
     if (newMode === 'markdown') {
-      // 富文本 → Markdown：把当前 HTML 转成 md
       const html = editor?.getHTML() ?? ''
       setMarkdown(turndown.turndown(html))
     } else {
-      // Markdown → 富文本：把 md 转成 HTML 再载入编辑器
       const html = await marked(markdown, { async: true })
       editor?.commands.setContent(html)
     }
@@ -320,7 +326,7 @@ export default function BlogEditor({
 }) {
   const { mode, switchMode, markdown, setMarkdown, editor, uploading, setUploading, mdRef } = hook
 
-  // 粘贴图片（富文本模式）
+  // 粘贴/拖拽图片（富文本模式）
   useEffect(() => {
     if (!editor) return
     const handlePaste = (event: ClipboardEvent) => {
@@ -334,9 +340,7 @@ export default function BlogEditor({
           if (!file || !userId) return
           setUploading(true)
           uploadImageToStorage(file, userId)
-            .then((url) => {
-              editor.chain().focus().setImage({ src: url }).run()
-            })
+            .then((url) => editor.chain().focus().setImage({ src: url }).run())
             .catch((e) => alert(e instanceof Error ? e.message : '上传失败'))
             .finally(() => setUploading(false))
           return
@@ -354,9 +358,7 @@ export default function BlogEditor({
       if (!userId) return
       setUploading(true)
       uploadImageToStorage(file, userId)
-        .then((url) => {
-          editor.chain().focus().setImage({ src: url }).run()
-        })
+        .then((url) => editor.chain().focus().setImage({ src: url }).run())
         .catch((e) => alert(e instanceof Error ? e.message : '上传失败'))
         .finally(() => setUploading(false))
     }
@@ -386,10 +388,7 @@ export default function BlogEditor({
           const start = ta.selectionStart
           const insert = `![image](${url})`
           setMarkdown((prev) => prev.slice(0, start) + insert + prev.slice(ta.selectionEnd))
-          // 移动光标到图片语法后面
-          requestAnimationFrame(() => {
-            ta.selectionStart = ta.selectionEnd = start + insert.length
-          })
+          requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + insert.length })
         } catch (err) {
           alert(err instanceof Error ? err.message : '上传失败')
         } finally {
