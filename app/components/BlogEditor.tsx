@@ -101,6 +101,13 @@ function MenuBar({
           <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={btn(editor.isActive('codeBlock'))} type="button">{'<>'} 代码块</button>
           <div className="w-px bg-[#d0d7de] mx-1" />
           <button onClick={() => editor.chain().focus().setHorizontalRule().run()} className={btn(false)} type="button">— 分割线</button>
+          <button
+            onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+            className={btn(false)}
+            type="button"
+          >
+            ⊞ 表格
+          </button>
           <label className={`${btn(false)} cursor-pointer`}>
             图片
             <input
