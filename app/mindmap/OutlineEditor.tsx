@@ -88,7 +88,7 @@ export default function OutlineEditor({ nodes, onChange }: Props) {
       return
     }
 
-    if (e.key === 'Backspace' && node.text === '' && nodes.length > 1) {
+    if (e.key === 'Backspace' && node.text === '' && nodes.length > 1 && idx !== 0) {
       e.preventDefault()
       const next = nodes.filter((_, i) => i !== idx)
       onChange(next)
