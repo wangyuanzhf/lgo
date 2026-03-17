@@ -1,13 +1,17 @@
 'use client'
 
 import 'mind-elixir/style.css'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { MindElixirInstance, MindElixirData } from 'mind-elixir'
 import { use } from 'react'
 import VisibilityToggle from '@/app/components/VisibilityToggle'
 import TagInput from '@/app/components/TagInput'
+import OutlineEditor from '../OutlineEditor'
+import { outlineToMind, mindToOutline } from '../outlineUtils'
+
+type ViewMode = 'outline' | 'mindmap'
 
 export default function MindmapEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -22,6 +26,8 @@ export default function MindmapEditPage({ params }: { params: Promise<{ id: stri
   const [saving, setSaving] = useState(false)
   const [mapData, setMapData] = useState<MindElixirData | null>(null)
   const [error, setError] = useState('')
+  const [viewMode, setViewMode] = useState<ViewMode>('outline')
+  const [outline, setOutline] = useState('')
 
   useEffect(() => {
     const load = async () => {
@@ -34,8 +40,9 @@ export default function MindmapEditPage({ params }: { params: Promise<{ id: stri
       setTitle(map.title)
       setIsPublic(map.is_public)
       setTags(map.tags ?? [])
-      setMapData(map.data as unknown as MindElixirData)
-      // load all tags for suggestions
+      const data = map.data as unknown as MindElixirData
+      setMapData(data)
+      setOutline(mindToOutline(data))
       const { data: allMaps } = await supabase.from('mindmaps').select('tags').eq('user_id', user.id)
       const all = Array.from(new Set((allMaps ?? []).flatMap((m: { tags: string[] }) => m.tags ?? [])))
       setTagSuggestions(all)
@@ -43,31 +50,39 @@ export default function MindmapEditPage({ params }: { params: Promise<{ id: stri
     load()
   }, [id, router])
 
-  useEffect(() => {
-    if (!mapData || !containerRef.current) return
-    let cancelled = false
-    const initMind = async (el: HTMLDivElement) => {
-      const MindElixirLib = (await import('mind-elixir')).default
-      if (cancelled) return
-      const instance = new MindElixirLib({
-        el, direction: MindElixirLib.SIDE,
-        draggable: true, contextMenu: true, toolBar: true, keypress: true,
-      }) as unknown as MindElixirInstance
-      instance.init(mapData)
-      mindRef.current = instance
+  const initMind = useCallback(async (data: MindElixirData) => {
+    if (!containerRef.current) return
+    const MindElixirLib = (await import('mind-elixir')).default
+    if (mindRef.current) {
+      mindRef.current.init(data)
+      return
     }
-    const el = containerRef.current
-    if (el.offsetWidth > 0 && el.offsetHeight > 0) {
-      initMind(el)
-    } else {
-      const ro = new ResizeObserver(() => {
-        if (el.offsetWidth > 0 && el.offsetHeight > 0) { ro.disconnect(); initMind(el) }
-      })
-      ro.observe(el)
-      return () => { ro.disconnect(); cancelled = true; mindRef.current = null }
+    const instance = new MindElixirLib({
+      el: containerRef.current,
+      direction: MindElixirLib.SIDE,
+      draggable: true, contextMenu: true, toolBar: true, keypress: true,
+    }) as unknown as MindElixirInstance
+    instance.init(data)
+    mindRef.current = instance
+  }, [])
+
+  const switchToMindmap = useCallback(async () => {
+    setViewMode('mindmap')
+    const data = outlineToMind(outline)
+    requestAnimationFrame(() => initMind(data))
+  }, [outline, initMind])
+
+  const switchToOutline = useCallback(() => {
+    if (mindRef.current) {
+      setOutline(mindToOutline(mindRef.current.getData()))
     }
-    return () => { cancelled = true; mindRef.current = null }
-  }, [mapData])
+    setViewMode('outline')
+  }, [])
+
+  const getData = useCallback((): MindElixirData => {
+    if (viewMode === 'mindmap' && mindRef.current) return mindRef.current.getData()
+    return outlineToMind(outline)
+  }, [viewMode, outline])
 
   const exportPdf = async () => {
     if (!mindRef.current) return
@@ -86,12 +101,11 @@ export default function MindmapEditPage({ params }: { params: Promise<{ id: stri
   }
 
   const save = async () => {
-    if (!mindRef.current) return
     if (!title.trim()) { setError('请输入标题'); return }
     setSaving(true); setError('')
     try {
       const supabase = createClient()
-      const data = mindRef.current.getData()
+      const data = getData()
       const { error: err } = await supabase.from('mindmaps').update({
         title: title.trim(),
         data: data as unknown as Record<string, unknown>,
@@ -131,8 +145,20 @@ export default function MindmapEditPage({ params }: { params: Promise<{ id: stri
         <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="导图标题"
           className="flex-1 text-base font-semibold text-[#1f2328] border border-[#d0d7de] rounded-md px-3 py-1.5 focus:outline-none focus:border-[#0969da]" />
         {error && <span className="text-sm text-red-600">{error}</span>}
+
+        <div className="flex rounded-md border border-[#d0d7de] overflow-hidden text-xs shrink-0">
+          <button type="button" onClick={() => viewMode === 'mindmap' && switchToOutline()}
+            className={`px-3 py-1.5 transition-colors ${viewMode === 'outline' ? 'bg-[#1f2328] text-white' : 'bg-white text-[#57606a] hover:bg-[#f6f8fa]'}`}>
+            ☰ 大纲
+          </button>
+          <button type="button" onClick={() => viewMode === 'outline' && switchToMindmap()}
+            className={`px-3 py-1.5 transition-colors border-l border-[#d0d7de] ${viewMode === 'mindmap' ? 'bg-[#1f2328] text-white' : 'bg-white text-[#57606a] hover:bg-[#f6f8fa]'}`}>
+            ✦ 导图
+          </button>
+        </div>
+
         <VisibilityToggle value={isPublic} onChange={setIsPublic} />
-        <button onClick={exportPdf} disabled={!mapData}
+        <button onClick={exportPdf} disabled={viewMode !== 'mindmap'}
           className="px-4 py-1.5 text-sm border border-[#d0d7de] text-[#57606a] rounded-md hover:bg-[#f6f8fa] transition-colors disabled:opacity-50">
           导出 PDF
         </button>
@@ -141,23 +167,20 @@ export default function MindmapEditPage({ params }: { params: Promise<{ id: stri
           {saving ? '保存中...' : '保存'}
         </button>
       </div>
+
       <div className="mb-3 shrink-0">
-        <TagInput
-          tags={tags}
-          onChange={setTags}
-          suggestions={tagSuggestions}
-          onSuggest={suggestTags}
-          suggesting={suggesting}
-          type="mindmap"
-        />
+        <TagInput tags={tags} onChange={setTags} suggestions={tagSuggestions} onSuggest={suggestTags} suggesting={suggesting} type="mindmap" />
       </div>
-      <div ref={containerRef} style={{ flex: 1, minHeight: 0 }}
-        className="bg-white border border-[#d0d7de] rounded-md overflow-hidden">
-        {!mapData && (
+
+      <div className="flex-1 min-h-0 bg-white border border-[#d0d7de] rounded-md overflow-hidden">
+        {!mapData ? (
           <div className="flex items-center justify-center h-full">
             <span className="text-sm text-[#57606a]">加载中...</span>
           </div>
-        )}
+        ) : viewMode === 'outline' ? (
+          <OutlineEditor value={outline} onChange={setOutline} />
+        ) : null}
+        <div ref={containerRef} style={{ width: '100%', height: '100%', display: viewMode === 'mindmap' && mapData ? 'block' : 'none' }} />
       </div>
     </div>
   )
