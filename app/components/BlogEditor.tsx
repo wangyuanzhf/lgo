@@ -325,6 +325,7 @@ export default function BlogEditor({
   hook: ReturnType<typeof useBlogEditor>
 }) {
   const { mode, switchMode, markdown, setMarkdown, editor, uploading, setUploading, mdRef } = hook
+  const editorWrapRef = useRef<HTMLDivElement>(null)
 
   // 粘贴/拖拽图片（富文本模式）
   useEffect(() => {
@@ -372,22 +373,54 @@ export default function BlogEditor({
     }
   }, [editor, mode, userId, setUploading])
 
-  // 行高拖拽
+
+  // 行高拖拽 —— 用 overlay 层，不碰 TipTap DOM
   useEffect(() => {
-    if (!editor || mode !== 'rich') return
-    const dom = editor.view.dom as HTMLElement
+    if (!editor || mode !== 'rich' || !editorWrapRef.current) return
+    const wrap = editorWrapRef.current
+    const editorDom = editor.view.dom as HTMLElement
 
-    // 给所有 tr 注入拖拽手柄（用 MutationObserver 监听表格变化）
-    const injectHandles = () => {
-      dom.querySelectorAll<HTMLTableRowElement>('table tr').forEach((tr) => {
-        if (tr.querySelector('.row-resize-handle')) return
+    // overlay 容器：绝对定位覆盖在编辑器上，pointer-events:none 默认透传
+    let overlay = wrap.querySelector<HTMLDivElement>('.row-resize-overlay')
+    if (!overlay) {
+      overlay = document.createElement('div')
+      overlay.className = 'row-resize-overlay'
+      overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:20'
+      wrap.appendChild(overlay)
+    }
+    const ov = overlay
+
+    const syncHandles = () => {
+      if (!wrap || !ov) return
+      // 清除旧手柄
+      ov.innerHTML = ''
+      const wrapRect = wrap.getBoundingClientRect()
+
+      editorDom.querySelectorAll<HTMLTableRowElement>('table tr').forEach((tr) => {
+        const trRect = tr.getBoundingClientRect()
         const handle = document.createElement('div')
-        handle.className = 'row-resize-handle'
-        tr.appendChild(handle)
-
+        handle.style.cssText = `
+          position:absolute;
+          left:${trRect.left - wrapRect.left}px;
+          top:${trRect.bottom - wrapRect.top - 3}px;
+          width:${trRect.width}px;
+          height:6px;
+          cursor:row-resize;
+          pointer-events:all;
+          background:transparent;
+          transition:background 0.1s;
+          z-index:20;
+        `
+        handle.addEventListener('mouseenter', () => {
+          handle.style.background = 'linear-gradient(transparent 2px,#0969da 2px,#0969da 4px,transparent 4px)'
+        })
+        handle.addEventListener('mouseleave', () => {
+          if (!handle.dataset.dragging) handle.style.background = 'transparent'
+        })
         handle.addEventListener('mousedown', (e: MouseEvent) => {
           e.preventDefault()
-          handle.classList.add('dragging')
+          handle.dataset.dragging = '1'
+          handle.style.background = 'linear-gradient(transparent 2px,#0969da 2px,#0969da 4px,transparent 4px)'
           const startY = e.clientY
           const cells = Array.from(tr.querySelectorAll<HTMLElement>('td, th'))
           const startHeights = cells.map((c) => c.getBoundingClientRect().height)
@@ -395,28 +428,34 @@ export default function BlogEditor({
           const onMove = (ev: MouseEvent) => {
             const delta = ev.clientY - startY
             cells.forEach((c, i) => {
-              const newH = Math.max(28, startHeights[i] + delta)
-              c.style.height = `${newH}px`
+              c.style.height = `${Math.max(28, startHeights[i] + delta)}px`
             })
+            syncHandles()
           }
           const onUp = () => {
-            handle.classList.remove('dragging')
+            delete handle.dataset.dragging
+            handle.style.background = 'transparent'
             document.removeEventListener('mousemove', onMove)
             document.removeEventListener('mouseup', onUp)
+            syncHandles()
           }
           document.addEventListener('mousemove', onMove)
           document.addEventListener('mouseup', onUp)
         })
+        ov.appendChild(handle)
       })
     }
 
-    injectHandles()
-    const observer = new MutationObserver(injectHandles)
-    observer.observe(dom, { childList: true, subtree: true })
-    return () => observer.disconnect()
+    syncHandles()
+    const observer = new MutationObserver(syncHandles)
+    observer.observe(editorDom, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] })
+    window.addEventListener('resize', syncHandles)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', syncHandles)
+      ov.innerHTML = ''
+    }
   }, [editor, mode])
-
-  // Markdown 模式下粘贴图片
   const handleMdPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items
     if (!items) return
@@ -444,7 +483,7 @@ export default function BlogEditor({
   }
 
   return (
-    <div className="bg-white border border-[#d0d7de] rounded-md overflow-hidden">
+    <div className="bg-white border border-[#d0d7de] rounded-md">
       <MenuBar
         editor={editor}
         userId={userId}
@@ -459,7 +498,7 @@ export default function BlogEditor({
         </div>
       )}
       {mode === 'rich' ? (
-        <>
+        <div ref={editorWrapRef} style={{ position: 'relative' }}>
           <style>{`
             /* 列宽拖拽手柄（TipTap resizable 内置） */
             .tiptap .column-resize-handle {
@@ -485,8 +524,6 @@ export default function BlogEditor({
             .tiptap.resize-cursor {
               cursor: col-resize;
             }
-
-            /* 表格整体 */
             .tiptap table {
               position: relative;
             }
@@ -494,41 +531,18 @@ export default function BlogEditor({
             .tiptap table th {
               position: relative;
             }
-
-            /* 选中单元格高亮 */
             .tiptap table td.selectedCell,
             .tiptap table th.selectedCell {
               background-color: #ddf4ff !important;
             }
-
-            /* 消除 prose p margin */
             .tiptap table td > *,
             .tiptap table th > * {
               margin-top: 0 !important;
               margin-bottom: 0 !important;
             }
-
-            /* 行高拖拽手柄 */
-            .tiptap table tr {
-              position: relative;
-            }
-            .row-resize-handle {
-              position: absolute;
-              left: 0;
-              right: 0;
-              bottom: -3px;
-              height: 6px;
-              cursor: row-resize;
-              z-index: 10;
-              background: transparent;
-            }
-            .row-resize-handle:hover,
-            .row-resize-handle.dragging {
-              background: linear-gradient(transparent 2px, #0969da 2px, #0969da 4px, transparent 4px);
-            }
           `}</style>
           <EditorContent editor={editor!} />
-        </>
+        </div>
       ) : (
         <textarea
           ref={mdRef}
