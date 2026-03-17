@@ -10,23 +10,34 @@ import { createClient } from '@/lib/supabase/client'
 import { use } from 'react'
 import VisibilityToggle from '@/app/components/VisibilityToggle'
 import TagInput from '@/app/components/TagInput'
+import { uploadImageToStorage } from '../hooks/useImageUpload'
 
-function MenuBar({ editor, userId }: { editor: ReturnType<typeof useEditor> | null; userId: string }) {
+function MenuBar({
+  editor,
+  userId,
+  onUploadStart,
+  onUploadEnd,
+}: {
+  editor: ReturnType<typeof useEditor> | null
+  userId: string
+  onUploadStart: () => void
+  onUploadEnd: () => void
+}) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   if (!editor) return null
   const btn = (active: boolean) =>
     `px-2 py-1 text-xs rounded border transition-colors ${active ? 'bg-[#1f2328] text-white border-[#1f2328]' : 'bg-white text-[#57606a] border-[#d0d7de] hover:bg-[#f6f8fa]'}`
 
   const handleImageUpload = async (file: File) => {
-    if (!file.type.startsWith('image/')) return
-    if (file.size > 5 * 1024 * 1024) { alert('图片大小不能超过 5MB'); return }
-    const supabase = createClient()
-    const ext = file.name.split('.').pop()
-    const path = `${userId}/${crypto.randomUUID()}.${ext}`
-    const { error } = await supabase.storage.from('post-images').upload(path, file)
-    if (error) { alert('上传失败：' + error.message); return }
-    const { data: { publicUrl } } = supabase.storage.from('post-images').getPublicUrl(path)
-    editor.chain().focus().setImage({ src: publicUrl }).run()
+    onUploadStart()
+    try {
+      const url = await uploadImageToStorage(file, userId)
+      editor.chain().focus().setImage({ src: url }).run()
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : '上传失败')
+    } finally {
+      onUploadEnd()
+    }
   }
 
   return (
@@ -71,6 +82,7 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
   const [isPublic, setIsPublic] = useState(true)
   const [published, setPublished] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [userId, setUserId] = useState('')
@@ -81,6 +93,51 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
     content: '',
     editorProps: {
       attributes: { class: 'prose max-w-none p-4 min-h-[400px] focus:outline-none text-[#1f2328]' },
+      handlePaste(view, event) {
+        const items = event.clipboardData?.items
+        if (!items) return false
+        for (const item of items) {
+          if (item.type.startsWith('image/')) {
+            event.preventDefault()
+            const file = item.getAsFile()
+            if (!file || !userId) return true
+            setUploading(true)
+            uploadImageToStorage(file, userId)
+              .then((url) => {
+                view.dispatch(
+                  view.state.tr.replaceSelectionWith(
+                    view.state.schema.nodes.image.create({ src: url })
+                  )
+                )
+              })
+              .catch((e) => alert(e instanceof Error ? e.message : '上传失败'))
+              .finally(() => setUploading(false))
+            return true
+          }
+        }
+        return false
+      },
+      handleDrop(view, event, _slice, moved) {
+        if (moved) return false
+        const files = event.dataTransfer?.files
+        if (!files?.length) return false
+        const file = files[0]
+        if (!file.type.startsWith('image/')) return false
+        event.preventDefault()
+        if (!userId) return true
+        const coords = view.posAtCoords({ left: event.clientX, top: event.clientY })
+        setUploading(true)
+        uploadImageToStorage(file, userId)
+          .then((url) => {
+            const pos = coords?.pos ?? view.state.selection.anchor
+            view.dispatch(
+              view.state.tr.insert(pos, view.state.schema.nodes.image.create({ src: url }))
+            )
+          })
+          .catch((e) => alert(e instanceof Error ? e.message : '上传失败'))
+          .finally(() => setUploading(false))
+        return true
+      },
     },
   })
 
@@ -160,7 +217,17 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
           <input type="text" placeholder="文章标题" value={title} onChange={(e) => setTitle(e.target.value)}
             className="w-full text-2xl font-semibold text-[#1f2328] placeholder-[#8d96a0] focus:outline-none" />
         </div>
-        <MenuBar editor={editor} userId={userId} />
+        <MenuBar
+          editor={editor}
+          userId={userId}
+          onUploadStart={() => setUploading(true)}
+          onUploadEnd={() => setUploading(false)}
+        />
+        {uploading && (
+          <div className="px-4 py-2 bg-[#ddf4ff] text-xs text-[#0969da] border-b border-[#b6e3ff]">
+            图片上传中...
+          </div>
+        )}
         <EditorContent editor={editor!} />
       </div>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
@@ -176,11 +243,11 @@ export default function EditBlogPage({ params }: { params: Promise<{ id: string 
       </div>
       <div className="flex items-center gap-4 mt-4">
         <div className="flex gap-3">
-          <button onClick={() => save(false)} disabled={saving}
+          <button onClick={() => save(false)} disabled={saving || uploading}
             className="px-4 py-2 text-sm border border-[#d0d7de] text-[#1f2328] bg-white rounded-md hover:bg-[#f6f8fa] transition-colors disabled:opacity-50">
             {published ? '取消发布' : '保存草稿'}
           </button>
-          <button onClick={() => save(true)} disabled={saving}
+          <button onClick={() => save(true)} disabled={saving || uploading}
             className="px-4 py-2 text-sm bg-[#1a7f37] text-white rounded-md hover:bg-[#19692f] transition-colors disabled:opacity-50">
             {saving ? '保存中...' : '发布文章'}
           </button>
