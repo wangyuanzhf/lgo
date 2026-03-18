@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import VisibilityToggle from '@/app/components/VisibilityToggle'
 
-type Note = { id: string; content: string; created_at: string; is_public: boolean }
+type Note = { id: string; content: string; created_at: string; is_public: boolean; is_starred: boolean }
 type ViewMode = 'timeline' | 'archive'
 type MonthGroup = { month: string; label: string; notes: Note[] }
 
@@ -34,7 +34,9 @@ export default function NotesPage() {
   const [submitting, setSubmitting] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [starringId, setStarringId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('timeline')
+  const [showStarred, setShowStarred] = useState(false)
   const MAX = 500
 
   const fetchNotes = useCallback(async () => {
@@ -42,7 +44,7 @@ export default function NotesPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
     const { data } = await supabase
-      .from('notes').select('id, content, created_at, is_public')
+      .from('notes').select('id, content, created_at, is_public, is_starred')
       .eq('user_id', user.id).order('created_at', { ascending: false })
     setNotes(data ?? [])
     setLoading(false)
@@ -62,7 +64,7 @@ export default function NotesPage() {
       if (profile?.is_banned) { alert('账号已被禁言，无法发布内容'); return }
       const { data, error } = await supabase
         .from('notes').insert({ user_id: user.id, content: text, is_public: isPublic })
-        .select('id, content, created_at, is_public').single()
+        .select('id, content, created_at, is_public, is_starred').single()
       if (error) throw error
       setNotes((prev) => [data, ...prev])
       setContent('')
@@ -92,8 +94,37 @@ export default function NotesPage() {
     } finally { setTogglingId(null) }
   }
 
+  const toggleStar = async (note: Note) => {
+    setStarringId(note.id)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.from('notes')
+        .update({ is_starred: !note.is_starred }).eq('id', note.id)
+      if (!error) setNotes((prev) => prev.map((n) => n.id === note.id ? { ...n, is_starred: !n.is_starred } : n))
+    } finally { setStarringId(null) }
+  }
+
   const NoteActions = ({ note }: { note: Note }) => (
     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+      <button
+        onClick={() => toggleStar(note)}
+        disabled={starringId === note.id}
+        title={note.is_starred ? '取消星标' : '添加星标'}
+        className={`transition-colors disabled:opacity-50 ${
+          note.is_starred ? 'text-[#d4a72c]' : 'text-[#8d96a0] hover:text-[#d4a72c]'
+        }`}
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 16 16"
+          fill={note.is_starred ? 'currentColor' : 'none'}
+          stroke="currentColor"
+          strokeWidth={note.is_starred ? 0 : 1.5}
+        >
+          <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z" />
+        </svg>
+      </button>
       <button
         onClick={() => togglePublic(note)}
         disabled={togglingId === note.id}
@@ -117,7 +148,18 @@ export default function NotesPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold text-[#1f2328]">随笔</h1>
         {!loading && notes.length > 0 && (
-          <div className="flex items-center gap-1 bg-[#f6f8fa] border border-[#d0d7de] rounded-md p-0.5">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowStarred((v) => !v)}
+              className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                showStarred
+                  ? 'bg-[#d4a72c] text-white border-[#d4a72c]'
+                  : 'bg-white text-[#57606a] border-[#d0d7de] hover:border-[#d4a72c]'
+              }`}
+            >
+              ⭐ 星标
+            </button>
+            <div className="flex items-center gap-1 bg-[#f6f8fa] border border-[#d0d7de] rounded-md p-0.5">
             <button
               onClick={() => setViewMode('timeline')}
               className={`px-2.5 py-1 text-xs rounded transition-colors ${
@@ -138,6 +180,7 @@ export default function NotesPage() {
             >
               归档
             </button>
+          </div>
           </div>
         )}
       </div>
@@ -169,48 +212,54 @@ export default function NotesPage() {
         <div className="text-center py-8 text-sm text-[#57606a]">加载中...</div>
       ) : notes.length === 0 ? (
         <div className="text-center py-12 text-sm text-[#57606a]">还没有随笔，写下第一条吧</div>
-      ) : viewMode === 'timeline' ? (
-        <div className="columns-1 sm:columns-2 gap-4 space-y-4">
-          {notes.map((note) => (
-            <div key={note.id} className="break-inside-avoid bg-white border border-[#d0d7de] rounded-md p-4 group">
-              <p className="text-sm text-[#1f2328] whitespace-pre-wrap leading-relaxed">{note.content}</p>
-              <div className="flex items-center justify-between mt-3 gap-2">
-                <span className="text-xs text-[#57606a]">
-                  {new Date(note.created_at).toLocaleString('zh-CN')}
-                </span>
-                <NoteActions note={note} />
+      ) : (() => {
+        const visibleNotes = showStarred ? notes.filter((n) => n.is_starred) : notes
+        if (visibleNotes.length === 0) {
+          return <div className="text-center py-12 text-sm text-[#57606a]">没有已星标的随笔</div>
+        }
+        return viewMode === 'timeline' ? (
+          <div className="columns-1 sm:columns-2 gap-4 space-y-4">
+            {visibleNotes.map((note) => (
+              <div key={note.id} className="break-inside-avoid bg-white border border-[#d0d7de] rounded-md p-4 group">
+                <p className="text-sm text-[#1f2328] whitespace-pre-wrap leading-relaxed">{note.content}</p>
+                <div className="flex items-center justify-between mt-3 gap-2">
+                  <span className="text-xs text-[#57606a]">
+                    {new Date(note.created_at).toLocaleString('zh-CN')}
+                  </span>
+                  <NoteActions note={note} />
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {groupByMonth(notes).map(({ month, label, notes: monthNotes }) => (
-            <div key={month}>
-              <div className="flex items-center gap-3 mb-3">
-                <h2 className="text-sm font-semibold text-[#1f2328]">{label}</h2>
-                <span className="text-xs px-1.5 py-0.5 rounded-full bg-[#f6f8fa] text-[#57606a] border border-[#d0d7de]">
-                  {monthNotes.length} 条
-                </span>
-                <div className="flex-1 h-px bg-[#d0d7de]" />
-              </div>
-              <div className="space-y-2">
-                {monthNotes.map((note) => (
-                  <div key={note.id} className="bg-white border border-[#d0d7de] rounded-md p-4 group">
-                    <p className="text-sm text-[#1f2328] whitespace-pre-wrap leading-relaxed line-clamp-3">{note.content}</p>
-                    <div className="flex items-center justify-between mt-3 gap-2">
-                      <span className="text-xs text-[#57606a]">
-                        {new Date(note.created_at).toLocaleString('zh-CN')}
-                      </span>
-                      <NoteActions note={note} />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {groupByMonth(visibleNotes).map(({ month, label, notes: monthNotes }) => (
+              <div key={month}>
+                <div className="flex items-center gap-3 mb-3">
+                  <h2 className="text-sm font-semibold text-[#1f2328]">{label}</h2>
+                  <span className="text-xs px-1.5 py-0.5 rounded-full bg-[#f6f8fa] text-[#57606a] border border-[#d0d7de]">
+                    {monthNotes.length} 条
+                  </span>
+                  <div className="flex-1 h-px bg-[#d0d7de]" />
+                </div>
+                <div className="space-y-2">
+                  {monthNotes.map((note) => (
+                    <div key={note.id} className="bg-white border border-[#d0d7de] rounded-md p-4 group">
+                      <p className="text-sm text-[#1f2328] whitespace-pre-wrap leading-relaxed line-clamp-3">{note.content}</p>
+                      <div className="flex items-center justify-between mt-3 gap-2">
+                        <span className="text-xs text-[#57606a]">
+                          {new Date(note.created_at).toLocaleString('zh-CN')}
+                        </span>
+                        <NoteActions note={note} />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )
+      })()}
     </div>
   )
 }

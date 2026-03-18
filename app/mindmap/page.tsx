@@ -2,27 +2,31 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import DeleteButton from '@/app/components/DeleteButton'
+import StarButton from '@/app/components/StarButton'
 
 export default async function MindmapListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tag?: string }>
+  searchParams: Promise<{ tag?: string; starred?: string }>
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) redirect('/login')
 
-  const { tag } = await searchParams
+  const { tag, starred } = await searchParams
 
   let query = supabase
     .from('mindmaps')
-    .select('id, title, created_at, updated_at, tags')
+    .select('id, title, created_at, updated_at, tags, is_starred')
     .eq('user_id', user.id)
     .order('updated_at', { ascending: false })
 
   if (tag?.trim()) {
     query = query.contains('tags', [tag.trim()])
+  }
+  if (starred === '1') {
+    query = query.eq('is_starred', true)
   }
 
   const { data: maps } = await query
@@ -46,15 +50,23 @@ export default async function MindmapListPage({
         </div>
       </div>
 
-      {allTags.length > 0 && (
+      {(allTags.length > 0 || true) && (
         <div className="flex flex-wrap gap-1.5 mb-4">
           <Link
             href="/mindmap"
             className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-              !tag ? 'bg-[#1f2328] text-white border-[#1f2328]' : 'bg-white text-[#57606a] border-[#d0d7de] hover:border-[#1f2328]'
+              !tag && starred !== '1' ? 'bg-[#1f2328] text-white border-[#1f2328]' : 'bg-white text-[#57606a] border-[#d0d7de] hover:border-[#1f2328]'
             }`}
           >
             全部
+          </Link>
+          <Link
+            href="/mindmap?starred=1"
+            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+              starred === '1' ? 'bg-[#d4a72c] text-white border-[#d4a72c]' : 'bg-white text-[#57606a] border-[#d0d7de] hover:border-[#d4a72c]'
+            }`}
+          >
+            ⭐ 星标
           </Link>
           {allTags.map((t) => (
             <Link
@@ -73,9 +85,9 @@ export default async function MindmapListPage({
       {!maps || maps.length === 0 ? (
         <div className="bg-white border border-[#d0d7de] rounded-md p-12 text-center">
           <p className="text-[#57606a] text-sm mb-4">
-            {tag?.trim() ? `没有找到标签为 "${tag.trim()}" 的导图` : '还没有思维导图，创建第一个吧'}
+            {starred === '1' ? '没有已星标的导图' : tag?.trim() ? `没有找到标签为 "${tag.trim()}" 的导图` : '还没有思维导图，创建第一个吧'}
           </p>
-          {!tag?.trim() && (
+          {!tag?.trim() && starred !== '1' && (
             <Link
               href="/mindmap/new"
               className="px-4 py-2 text-sm bg-[#0969da] text-white rounded-md hover:bg-[#0860c9] transition-colors"
@@ -116,7 +128,8 @@ export default async function MindmapListPage({
                   ))}
                 </div>
               )}
-              <div className="flex justify-end mt-3">
+              <div className="flex justify-end items-center gap-2 mt-3">
+                <StarButton id={map.id} kind="mindmap" isStarred={map.is_starred ?? false} />
                 <DeleteButton id={map.id} kind="mindmap" />
               </div>
             </div>

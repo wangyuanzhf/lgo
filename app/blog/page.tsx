@@ -4,22 +4,23 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import SearchInput from './SearchInput'
 import DeleteButton from '@/app/components/DeleteButton'
+import StarButton from '@/app/components/StarButton'
 
 export default async function BlogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; tag?: string }>
+  searchParams: Promise<{ q?: string; tag?: string; starred?: string }>
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) redirect('/login')
 
-  const { q, tag } = await searchParams
+  const { q, tag, starred } = await searchParams
 
   let query = supabase
     .from('posts')
-    .select('id, title, content, published, created_at, updated_at, tags, view_count, is_public')
+    .select('id, title, content, published, created_at, updated_at, tags, view_count, is_public, is_starred')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
 
@@ -28,6 +29,9 @@ export default async function BlogPage({
   }
   if (tag?.trim()) {
     query = query.contains('tags', [tag.trim()])
+  }
+  if (starred === '1') {
+    query = query.eq('is_starred', true)
   }
 
   const { data: posts } = await query
@@ -55,15 +59,23 @@ export default async function BlogPage({
         </div>
       </div>
 
-      {allTags.length > 0 && (
+      {(allTags.length > 0 || true) && (
         <div className="flex flex-wrap gap-1.5 mb-4">
           <Link
             href="/blog"
             className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-              !tag ? 'bg-[#1f2328] text-white border-[#1f2328]' : 'bg-white text-[#57606a] border-[#d0d7de] hover:border-[#1f2328]'
+              !tag && starred !== '1' ? 'bg-[#1f2328] text-white border-[#1f2328]' : 'bg-white text-[#57606a] border-[#d0d7de] hover:border-[#1f2328]'
             }`}
           >
             全部
+          </Link>
+          <Link
+            href="/blog?starred=1"
+            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+              starred === '1' ? 'bg-[#d4a72c] text-white border-[#d4a72c]' : 'bg-white text-[#57606a] border-[#d0d7de] hover:border-[#d4a72c]'
+            }`}
+          >
+            ⭐ 星标
           </Link>
           {allTags.map((t) => (
             <Link
@@ -82,13 +94,15 @@ export default async function BlogPage({
       {!posts || posts.length === 0 ? (
         <div className="bg-white border border-[#d0d7de] rounded-md p-12 text-center">
           <p className="text-[#57606a] text-sm mb-4">
-            {tag?.trim()
-              ? `没有找到标签为 "${tag.trim()}" 的文章`
-              : q?.trim()
+            {q?.trim()
               ? `没有找到包含 "${q.trim()}" 的文章`
+              : starred === '1'
+              ? '没有已星标的文章'
+              : tag?.trim()
+              ? `没有找到标签为 "${tag.trim()}" 的文章`
               : '还没有文章，写下你的第一篇吧'}
           </p>
-          {!q?.trim() && !tag?.trim() && (
+          {!q?.trim() && !tag?.trim() && starred !== '1' && (
             <Link
               href="/blog/new"
               className="px-4 py-2 text-sm bg-[#0969da] text-white rounded-md hover:bg-[#0860c9] transition-colors"
@@ -153,6 +167,7 @@ export default async function BlogPage({
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
+                      <StarButton id={post.id} kind="post" isStarred={post.is_starred ?? false} />
                       <Link href={`/blog/${post.id}/edit`} className="text-xs text-[#0969da] hover:underline">编辑</Link>
                       <DeleteButton id={post.id} kind="post" />
                     </div>
