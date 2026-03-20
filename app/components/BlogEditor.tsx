@@ -392,7 +392,7 @@ function MenuBar({
   onUploadStart: () => void
   onUploadEnd: () => void
   mode: Mode
-  onModeChange: (m: Mode) => void
+  onModeChange: (m: Mode) => void | Promise<void>
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const btn = (active: boolean) =>
@@ -509,21 +509,30 @@ export function useBlogEditor(initialHtml: string = '') {
     },
   })
 
-  // 初始内容设置（只给富文本编辑器赋值，markdown 框独立维护）
+  // 初始内容设置
   useEffect(() => {
     if (initialHtml && editor && !editor.isDestroyed) {
       editor.commands.setContent(initialHtml)
+      setMarkdown(turndown.turndown(initialHtml))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialHtml])
 
-  // 切换模式：只改显示模式，不转换任何内容
-  const switchMode = useCallback((newMode: Mode) => {
+  // 切换模式时同步内容（Turndown 已有数学公式规则，转换安全）
+  const switchMode = useCallback(async (newMode: Mode) => {
     if (newMode === mode) return
+    if (newMode === 'markdown') {
+      // 富文本 → Markdown：用 Turndown（含数学公式规则）
+      const html = editor?.getHTML() ?? ''
+      setMarkdown(turndown.turndown(html))
+    } else {
+      // Markdown → 富文本：用 markedWithMath 保护公式
+      const html = await markedWithMath(markdown)
+      editor?.commands.setContent(html)
+    }
     setMode(newMode)
-  }, [mode])
+  }, [mode, editor, markdown])
 
-  // 保存时取当前激活模式的内容
   const getHTML = useCallback(async (): Promise<string> => {
     if (mode === 'markdown') {
       return await markedWithMath(markdown)
