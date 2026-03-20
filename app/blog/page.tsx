@@ -5,6 +5,7 @@ import { Suspense } from 'react'
 import SearchInput from './SearchInput'
 import DeleteButton from '@/app/components/DeleteButton'
 import StarButton from '@/app/components/StarButton'
+import AppShell from '@/app/components/AppShell'
 
 export default async function BlogPage({
   searchParams,
@@ -42,6 +43,7 @@ export default async function BlogPage({
   const allTags = Array.from(new Set((allPosts ?? []).flatMap((p: { tags: string[] }) => p.tags ?? [])))
 
   return (
+    <AppShell>
     <div>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold text-[#1f2328]">我的博客</h1>
@@ -179,5 +181,6 @@ export default async function BlogPage({
         </div>
       )}
     </div>
+    </AppShell>
   )
 }

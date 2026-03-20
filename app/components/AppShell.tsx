@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import LogoutButton from '@/app/dashboard/LogoutButton'
 import Logo from '@/app/components/Logo'
+import MobileNav from '@/app/components/MobileNav'
 
 export default async function AppShell({
   children,
@@ -129,13 +130,16 @@ export default async function AppShell({
                 @{profile.username}
               </Link>
             )}
-            <LogoutButton />
+            <div className="hidden md:block">
+              <LogoutButton />
+            </div>
           </div>
         </div>
       </header>
 
       <div className="flex flex-1 max-w-[1280px] mx-auto w-full px-4 py-6 gap-6">
-        <nav className="w-52 shrink-0">
+        {/* 左侧 sidebar：仅桌面端显示 */}
+        <nav className="w-52 shrink-0 hidden md:block">
           <ul className="space-y-1">
             {navItems.map((item) => (
               <li key={item.key}>
@@ -190,10 +194,19 @@ export default async function AppShell({
           </ul>
         </nav>
 
-        <main className="flex-1 min-w-0">
+        {/* 主内容区：手机端加 pb-16 避免被底部 Tab Bar 遮挡 */}
+        <main className="flex-1 min-w-0 pb-16 md:pb-0">
           {children}
         </main>
       </div>
+
+      {/* 移动端底部导航（Client Component） */}
+      <MobileNav
+        navItems={navItems}
+        activeSection={activeSection}
+        isAdmin={isAdmin}
+        profile={profile}
+      />
     </div>
   )
 }
