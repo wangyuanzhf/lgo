@@ -1,43 +1,128 @@
 'use client'
 
-import { useEditor, EditorContent, useEditorState } from '@tiptap/react'
+import { useEditor, EditorContent, useEditorState, ReactNodeViewRenderer, NodeViewWrapper, NodeViewContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import CodeBlock from '@tiptap/extension-code-block'
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
+import { common, createLowlight } from 'lowlight'
 import Image from '@tiptap/extension-image'
 import Mathematics from '@tiptap/extension-mathematics'
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { marked } from 'marked'
+import { markedWithMath } from '@/lib/markedWithMath'
 import TurndownService from 'turndown'
 import { uploadImageToStorage } from '@/app/blog/[id]/hooks/useImageUpload'
 
-// CodeBlock 扩展：将 language 属性渲染为 class="language-xxx"
-const CodeBlockWithLanguage = CodeBlock.extend({
-  addAttributes() {
-    return {
-      language: {
-        default: null,
-        parseHTML: (element) => {
-          const cls = element.firstElementChild?.className ?? ''
-          const match = cls.match(/language-(\S+)/)
-          return match ? match[1] : null
-        },
-        renderHTML: (attributes) => {
-          if (!attributes.language) return {}
-          return { 'data-language': attributes.language }
-        },
-      },
+const lowlight = createLowlight(common)
+
+// ── CodeBlock NodeView：每个代码块内嵌独立语言栏 ─────────────────────────────
+function CodeBlockNodeView({
+  node,
+  updateAttributes,
+}: {
+  node: { attrs: { language: string | null }; textContent: string }
+  updateAttributes: (attrs: Record<string, unknown>) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+  const pickerRef = useRef<HTMLDivElement>(null)
+  const lang = node.attrs.language ?? ''
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (!pickerRef.current?.contains(e.target as Node)) { setOpen(false); setSearch('') }
     }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const setLang = (v: string) => { updateAttributes({ language: v }); setOpen(false); setSearch('') }
+
+  const autoDetect = () => {
+    const detected = detectLanguage(node.textContent)
+    updateAttributes({ language: detected })
+  }
+
+  const filtered = search.trim()
+    ? LANGUAGES.filter(l => l.label.toLowerCase().includes(search.toLowerCase()) || l.value.toLowerCase().includes(search.toLowerCase()))
+    : LANGUAGES
+
+  const displayLabel = LANGUAGES.find(l => l.value === lang)?.label ?? (lang || '未设置语言')
+
+  return (
+    <NodeViewWrapper className="relative my-4">
+      {/* 语言操作栏 */}
+      <div
+        className="flex items-center gap-2 px-3 py-1 bg-[#2d333b] rounded-t-md border-b border-[#444c56] select-none"
+        contentEditable={false}
+      >
+        {/* 语言选择按钮 */}
+        <div ref={pickerRef} className="relative">
+          <button
+            type="button"
+            onMouseDown={(e) => { e.preventDefault(); setOpen(o => !o) }}
+            className="flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-[#444c56] text-[#adbac7] hover:bg-[#545d68] hover:text-white transition-colors"
+          >
+            <span>{displayLabel}</span>
+            <span className="opacity-60">▾</span>
+          </button>
+          {open && (
+            <div
+              className="absolute left-0 top-full mt-1 z-50 bg-white border border-[#d0d7de] rounded-md shadow-xl p-2"
+              style={{ minWidth: 232 }}
+            >
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="搜索语言..."
+                className="w-full px-2 py-1 mb-2 text-xs border border-[#d0d7de] rounded focus:outline-none focus:border-[#0969da]"
+                autoFocus
+                onMouseDown={e => e.stopPropagation()}
+              />
+              <div className="grid grid-cols-3 gap-1 max-h-48 overflow-y-auto">
+                {filtered.map(l => (
+                  <button
+                    key={l.value}
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); setLang(l.value) }}
+                    className={`px-2 py-1 text-xs rounded border transition-colors text-left truncate ${
+                      lang === l.value
+                        ? 'bg-[#0969da] text-white border-[#0969da]'
+                        : 'bg-white text-[#57606a] border-[#d0d7de] hover:bg-[#f0f6ff] hover:border-[#0969da]'
+                    }`}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 自动检测 */}
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); autoDetect() }}
+          className="px-2 py-0.5 text-xs rounded bg-[#444c56] text-[#adbac7] hover:bg-[#545d68] hover:text-white transition-colors"
+          title="根据代码内容自动识别语言"
+        >
+          ⚡ 自动检测
+        </button>
+      </div>
+
+      {/* 代码内容 */}
+      <pre className="!my-0 !rounded-t-none"><NodeViewContent as={"code" as "div"} className={lang ? `language-${lang}` : ''} /></pre>
+    </NodeViewWrapper>
+  )
+}
+
+// CodeBlock 扩展：基于 lowlight 实现语法高亮，并挂载自定义语言栏 NodeView
+const CodeBlockWithLanguage = CodeBlockLowlight.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(CodeBlockNodeView as unknown as Parameters<typeof ReactNodeViewRenderer>[0])
   },
-  renderHTML({ node, HTMLAttributes }) {
-    const lang = node.attrs.language
-    return [
-      'pre',
-      HTMLAttributes,
-      ['code', lang ? { class: `language-${lang}` } : {}, 0],
-    ]
-  },
-})
+}).configure({ lowlight })
 
 const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
 
@@ -215,183 +300,32 @@ const LANGUAGES = [
 function detectLanguage(code: string): string {
   const c = code
   const tests: [string, RegExp | (() => boolean)][] = [
-    ['json', () => { try { const t = c.trim(); JSON.parse(t); return t.startsWith('{') || t.startsWith('[') } catch { return false } }],
-    ['mermaid', /^\s*(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|gitGraph|mindmap|timeline)\b/m],
-    ['html', /<(!DOCTYPE\s+html|html|head|body|div|span|h[1-6]\b|script|style|link|meta)[^>]*>/i],
-    ['css', /[.#]?[\w-]+\s*\{[\s\S]*?[\w-]+\s*:[\s\S]*?\}/],
-    ['sql', /^\s*(SELECT\s|INSERT\s+INTO\s|UPDATE\s+\w+\s+SET\s|DELETE\s+FROM\s|CREATE\s+(TABLE|DATABASE)\s|DROP\s+|ALTER\s+TABLE\s)/im],
-    ['bash', /^#!\/bin\/(bash|sh)\b|^\s*(echo\s|export\s|cd\s|mkdir\s|rm\s|grep\s|chmod\s|apt-get\s|brew\s|pip\s|npm\s|yarn\s)/m],
-    ['python', /^\s*(def\s+\w+\s*\(|class\s+\w+[\s:(]|import\s+\w+|from\s+\w+\s+import\s|\bprint\s*\(|elif\b)/m],
+    ['json',       () => { try { const t = c.trim(); JSON.parse(t); return t.startsWith('{') || t.startsWith('[') } catch { return false } }],
+    ['mermaid',    /^\s*(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|gitGraph|mindmap|timeline)\b/m],
+    ['html',       /<(!DOCTYPE\s+html|html|head|body|div|span|h[1-6]\b|script|style|link|meta)[^>]*>/i],
+    ['sql',        /^\s*(SELECT\s|INSERT\s+INTO\s|UPDATE\s+\w+\s+SET\s|DELETE\s+FROM\s|CREATE\s+(TABLE|DATABASE)\s|DROP\s+|ALTER\s+TABLE\s)/im],
+    ['bash',       /^#!\/bin\/(bash|sh)\b|^\s*(echo\s+|export\s+\w+=|cd\s+|mkdir\s+|rm\s+|grep\s+|chmod\s+|apt-get\s|brew\s+install|pip\s+install|npm\s+install)/m],
+    ['python',     /^\s*(def\s+\w+\s*\(|class\s+\w+[\s:(]|import\s+\w+|from\s+\w+\s+import\s|\bprint\s*\(|elif\b|lambda\s+\w)|#.*\bPython\b/m],
     ['typescript', /:\s*(string|number|boolean|void|any|never|unknown)\b|^\s*(interface|type)\s+\w+\s*[={<]|<[A-Z]\w*>/m],
     ['javascript', /\b(const|let|var)\s+\w+\s*=|=>\s*[{(]|console\.(log|error|warn)\s*\(|\brequire\s*\(|module\.exports/],
-    ['go', /^package\s+\w+|^\s*func\s+[\w*]*\s*\(|\w+\s*:=\s*/m],
-    ['rust', /^\s*(fn\s+\w+|let\s+mut\s|impl\s+\w+|use\s+std::|pub\s+(fn|struct|enum|impl)\s)/m],
-    ['csharp', /^\s*(namespace\s+[\w.]+|using\s+[\w.]+;)|Console\.(Write|Read)\w*\s*\(/m],
-    ['java', /^\s*(public|private|protected)\s+(class|interface|enum)\s+\w+|System\.out\.print|@Override/m],
-    ['cpp', /#include\s*<[\w.]+>|std::|cout\s*<<|cin\s*>>/],
-    ['c', /#include\s*<(stdio|stdlib|string|math)\.h>|int\s+main\s*\(/],
-    ['swift', /import\s+(Foundation|UIKit|SwiftUI|AppKit)|^\s*(func|class|struct)\s+\w+.*->/m],
-    ['kotlin', /fun\s+\w+\s*\(|println\s*\(|val\s+\w+\s*[:=]|data\s+class\s+\w+/],
-    ['ruby', /^\s*(def\s+\w+|class\s+\w+|require\s+'|puts\s|attr_accessor\s)/m],
-    ['php', /<\?php|\$\w+\s*=(?!=)|\becho\s+/],
-    ['yaml', /^---\s*$|^[\w-]+:\s+\S/m],
+    ['go',         /^package\s+\w+|^\s*func\s+[\w*]*\s*\(|\w+\s*:=\s*/m],
+    ['rust',       /^\s*(fn\s+\w+|let\s+mut\s|impl\s+\w+|use\s+std::|pub\s+(fn|struct|enum|impl)\s)/m],
+    ['csharp',     /^\s*(namespace\s+[\w.]+|using\s+[\w.]+;)|Console\.(Write|Read)\w*\s*\(/m],
+    ['java',       /^\s*(public|private|protected)\s+(class|interface|enum)\s+\w+|System\.out\.print|@Override/m],
+    ['cpp',        /#include\s*<[\w.]+>|std::|cout\s*<<|cin\s*>>/],
+    ['c',          /#include\s*<(stdio|stdlib|string|math)\.h>|int\s+main\s*\(/],
+    ['swift',      /import\s+(Foundation|UIKit|SwiftUI|AppKit)|^\s*(func|class|struct)\s+\w+.*->/m],
+    ['kotlin',     /fun\s+\w+\s*\(|println\s*\(|val\s+\w+\s*[:=]|data\s+class\s+\w+/],
+    ['ruby',       /^\s*(def\s+\w+|class\s+\w+|require\s+'|puts\s|attr_accessor\s)/m],
+    ['php',        /<\?php|\$\w+\s*=(?!=)|\becho\s+/],
+    // CSS: must see selector { property: value } all on recognizable lines, no generic { } match
+    ['css',        /^[.#]?[\w-]+[\s\w,>+~[\]:.-]*\s*\{[^}]*[\w-]+\s*:[^}]+\}/m],
+    ['yaml',       /^---\s*$|^[\w-]+:\s+\S/m],
   ]
   for (const [lang, test] of tests) {
     if (typeof test === 'function' ? test() : test.test(code)) return lang
   }
   return 'plaintext'
-}
-
-function getCodeBlockContent(editor: ReturnType<typeof useEditor>): string {
-  if (!editor) return ''
-  const { state } = editor
-  const resolved = state.doc.resolve(state.selection.from)
-  for (let d = resolved.depth; d >= 0; d--) {
-    const node = resolved.node(d)
-    if (node.type.name === 'codeBlock') return node.textContent
-  }
-  return ''
-}
-
-// ── CodeBlockPicker ──────────────────────────────────────────────────────────
-function CodeBlockPicker({ editor }: { editor: ReturnType<typeof useEditor> }) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const ref = useRef<HTMLDivElement>(null)
-
-  const { isActive, currentLanguage } = useEditorState({
-    editor,
-    selector: (ctx) => ({
-      isActive: ctx.editor.isActive('codeBlock'),
-      currentLanguage: (ctx.editor.getAttributes('codeBlock').language as string) ?? '',
-    }),
-  })
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) { setOpen(false); setSearch('') }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
-  const applyLanguage = (lang: string) => {
-    if (!editor) return
-    if (isActive) {
-      editor.chain().focus().updateAttributes('codeBlock', { language: lang }).run()
-    } else {
-      editor.chain().focus().setCodeBlock({ language: lang }).run()
-    }
-    setOpen(false)
-    setSearch('')
-  }
-
-  const filtered = search.trim()
-    ? LANGUAGES.filter(l =>
-        l.label.toLowerCase().includes(search.toLowerCase()) ||
-        l.value.toLowerCase().includes(search.toLowerCase()))
-    : LANGUAGES
-
-  const base = 'px-2 py-1 text-xs border transition-colors'
-  const cls = isActive
-    ? `${base} bg-[#1f2328] text-white border-[#1f2328]`
-    : `${base} bg-white text-[#57606a] border-[#d0d7de] hover:bg-[#f6f8fa]`
-
-  return (
-    <div ref={ref} className="relative flex items-center">
-      <button
-        type="button"
-        onMouseDown={(e) => { e.preventDefault(); editor?.chain().focus().toggleCodeBlock().run() }}
-        className={`${cls} rounded-l rounded-r-none border-r-0`}
-        title={isActive ? '退出代码块' : '插入代码块'}
-      >
-        {'<>'} 代码块
-      </button>
-      <button
-        type="button"
-        onMouseDown={(e) => { e.preventDefault(); setOpen((o) => !o) }}
-        className={`${cls} rounded-r rounded-l-none px-1.5`}
-        title="选择语言"
-      >
-        ▾
-      </button>
-
-      {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-[#d0d7de] rounded-md shadow-lg p-2" style={{ minWidth: 244 }}>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索语言..."
-            className="w-full px-2 py-1 mb-2 text-xs border border-[#d0d7de] rounded focus:outline-none focus:border-[#0969da]"
-            autoFocus
-          />
-          <div className="grid grid-cols-3 gap-1 max-h-52 overflow-y-auto">
-            {filtered.map((l) => (
-              <button
-                key={l.value}
-                type="button"
-                onMouseDown={(e) => { e.preventDefault(); applyLanguage(l.value) }}
-                className={`px-2 py-1 text-xs rounded border transition-colors text-left truncate ${
-                  currentLanguage === l.value
-                    ? 'bg-[#0969da] text-white border-[#0969da]'
-                    : 'bg-white text-[#57606a] border-[#d0d7de] hover:bg-[#f0f6ff] hover:border-[#0969da]'
-                }`}
-              >
-                {l.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── CodeBlockFloatBar ────────────────────────────────────────────────────────
-function CodeBlockFloatBar({ editor }: { editor: ReturnType<typeof useEditor> }) {
-  const { isInCodeBlock, currentLanguage } = useEditorState({
-    editor,
-    selector: (ctx) => ({
-      isInCodeBlock: ctx.editor.isActive('codeBlock'),
-      currentLanguage: (ctx.editor.getAttributes('codeBlock').language as string) ?? '',
-    }),
-  })
-
-  if (!isInCodeBlock) return null
-
-  const autoDetect = () => {
-    if (!editor) return
-    const detected = detectLanguage(getCodeBlockContent(editor))
-    editor.chain().focus().updateAttributes('codeBlock', { language: detected }).run()
-  }
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 bg-[#fff8e1] border-b border-[#ffe082] text-xs">
-      <span className="text-[#7d4e00] font-medium shrink-0">代码语言:</span>
-      <select
-        value={currentLanguage}
-        onChange={(e) =>
-          editor?.chain().focus().updateAttributes('codeBlock', { language: e.target.value }).run()
-        }
-        className="px-1.5 py-0.5 text-xs border border-[#d0d7de] rounded bg-white text-[#1f2328] focus:outline-none focus:border-[#0969da] cursor-pointer"
-      >
-        <option value="">-- 未设置 --</option>
-        {LANGUAGES.map((l) => (
-          <option key={l.value} value={l.value}>{l.label}</option>
-        ))}
-      </select>
-      <button
-        type="button"
-        onMouseDown={(e) => { e.preventDefault(); autoDetect() }}
-        className="px-2 py-0.5 rounded border border-[#ffe082] bg-white text-[#7d4e00] hover:bg-[#fff3cd] hover:border-[#d4a72c] transition-colors"
-        title="根据代码内容自动识别语言"
-      >
-        ⚡ 自动检测
-      </button>
-    </div>
-  )
 }
 
 function MenuBar({
@@ -462,7 +396,7 @@ function MenuBar({
             <button onClick={() => editor.chain().focus().toggleBulletList().run()} className={btn(editor.isActive('bulletList'))} type="button">• 列表</button>
             <button onClick={() => editor.chain().focus().toggleOrderedList().run()} className={btn(editor.isActive('orderedList'))} type="button">1. 列表</button>
             <button onClick={() => editor.chain().focus().toggleBlockquote().run()} className={btn(editor.isActive('blockquote'))} type="button">&quot; 引用</button>
-            <CodeBlockPicker editor={editor} />
+            <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={btn(editor.isActive('codeBlock'))} type="button">{'<>'} 代码块</button>
             <div className="w-px bg-[#d0d7de] mx-1" />
             <button onClick={() => editor.chain().focus().setHorizontalRule().run()} className={btn(false)} type="button">— 分割线</button>
             <TablePicker
@@ -494,8 +428,6 @@ function MenuBar({
       </div>
       {/* 表格浮动操作条：响应式，光标在表格内时自动出现 */}
       {mode === 'rich' && editor && <TableFloatBar editor={editor} />}
-      {/* 代码块浮动操作条：光标在代码块内时自动出现 */}
-      {mode === 'rich' && editor && <CodeBlockFloatBar editor={editor} />}
     </div>
   )
 }
@@ -541,7 +473,7 @@ export function useBlogEditor(initialHtml: string = '') {
       const html = editor?.getHTML() ?? ''
       setMarkdown(turndown.turndown(html))
     } else {
-      const html = await marked(markdown, { async: true })
+      const html = await markedWithMath(markdown)
       editor?.commands.setContent(html)
     }
     setMode(newMode)
@@ -549,7 +481,7 @@ export function useBlogEditor(initialHtml: string = '') {
 
   const getHTML = useCallback(async (): Promise<string> => {
     if (mode === 'markdown') {
-      return await marked(markdown, { async: true })
+      return await markedWithMath(markdown)
     }
     return editor?.getHTML() ?? ''
   }, [mode, editor, markdown])

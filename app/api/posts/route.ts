@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { marked } from 'marked'
+import { markedWithMath } from '@/lib/markedWithMath'
 
 // 使用 service_role key，绕过 RLS 直接写库
 const supabase = createClient(
@@ -42,8 +42,8 @@ export async function POST(request: NextRequest) {
   if (!title?.trim()) return badRequest('title is required')
   if (!content?.trim()) return badRequest('content is required')
 
-  // Markdown → HTML
-  const html = await marked(content, { async: true })
+  // Markdown → HTML（数学公式先保护，再交给 marked）
+  const html = await markedWithMath(content)
 
   // 查 API Key 对应的用户（用 service_role 查 profiles，取第一个匹配的管理员）
   // 实际上 API Key 只有一个所有者，直接从环境变量取 owner user_id
