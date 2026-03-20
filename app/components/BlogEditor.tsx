@@ -509,27 +509,21 @@ export function useBlogEditor(initialHtml: string = '') {
     },
   })
 
-  // 初始内容设置
+  // 初始内容设置（只给富文本编辑器赋值，markdown 框独立维护）
   useEffect(() => {
     if (initialHtml && editor && !editor.isDestroyed) {
       editor.commands.setContent(initialHtml)
-      setMarkdown(turndown.turndown(initialHtml))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialHtml])
 
-  const switchMode = useCallback(async (newMode: Mode) => {
+  // 切换模式：只改显示模式，不转换任何内容
+  const switchMode = useCallback((newMode: Mode) => {
     if (newMode === mode) return
-    if (newMode === 'markdown') {
-      const html = editor?.getHTML() ?? ''
-      setMarkdown(turndown.turndown(html))
-    } else {
-      const html = await markedWithMath(markdown)
-      editor?.commands.setContent(html)
-    }
     setMode(newMode)
-  }, [mode, editor, markdown])
+  }, [mode])
 
+  // 保存时取当前激活模式的内容
   const getHTML = useCallback(async (): Promise<string> => {
     if (mode === 'markdown') {
       return await markedWithMath(markdown)
