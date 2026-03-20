@@ -392,7 +392,7 @@ function MenuBar({
   onUploadStart: () => void
   onUploadEnd: () => void
   mode: Mode
-  onModeChange: (m: Mode) => void
+  onModeChange: (m: Mode) => void | Promise<void>
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const btn = (active: boolean) =>
@@ -509,7 +509,7 @@ export function useBlogEditor(initialHtml: string = '') {
     },
   })
 
-  // 初始内容设置：两个缓冲区各自独立初始化
+  // 初始内容设置
   useEffect(() => {
     if (initialHtml && editor && !editor.isDestroyed) {
       editor.commands.setContent(initialHtml)
@@ -518,16 +518,21 @@ export function useBlogEditor(initialHtml: string = '') {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialHtml])
 
-  // 切换模式：只改显示视图，不转换、不同步任何内容
-  const switchMode = useCallback((newMode: Mode) => {
+  // 切换模式时同步内容
+  const switchMode = useCallback(async (newMode: Mode) => {
     if (newMode === mode) return
+    if (newMode === 'markdown') {
+      // 富文本 → Markdown
+      setMarkdown(turndown.turndown(editor?.getHTML() ?? ''))
+    } else {
+      // Markdown → 富文本
+      editor?.commands.setContent(await markedWithMath(markdown))
+    }
     setMode(newMode)
-  }, [mode])
+  }, [mode, editor, markdown])
 
   const getHTML = useCallback(async (): Promise<string> => {
-    if (mode === 'markdown') {
-      return await markedWithMath(markdown)
-    }
+    if (mode === 'markdown') return await markedWithMath(markdown)
     return editor?.getHTML() ?? ''
   }, [mode, editor, markdown])
 
