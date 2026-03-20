@@ -126,6 +126,57 @@ const CodeBlockWithLanguage = CodeBlockLowlight.extend({
 
 const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
 
+// ── 数学公式：TipTap Mathematics 生成的节点 → $...$ / $$...$$ ──────────────
+// block math: <div data-type="math" data-latex="...">
+turndown.addRule('mathBlock', {
+  filter(node) {
+    return node.nodeName === 'DIV' && (node as HTMLElement).dataset.type === 'math'
+  },
+  replacement(_content, node) {
+    const latex = (node as HTMLElement).dataset.latex ?? ''
+    return `\n\n$$\n${latex}\n$$\n\n`
+  },
+})
+// inline math: <span data-type="inlineMath" data-latex="...">
+turndown.addRule('mathInline', {
+  filter(node) {
+    return node.nodeName === 'SPAN' && (node as HTMLElement).dataset.type === 'inlineMath'
+  },
+  replacement(_content, node) {
+    const latex = (node as HTMLElement).dataset.latex ?? ''
+    return `$${latex}$`
+  },
+})
+// KaTeX 已渲染的节点（<span class="katex">）→ 提取原始 LaTeX 并转回 $...$
+// KaTeX block: 父元素是 <span class="katex-display">
+turndown.addRule('katexDisplay', {
+  filter(node) {
+    return (
+      node.nodeName === 'SPAN' &&
+      (node as HTMLElement).classList.contains('katex-display')
+    )
+  },
+  replacement(_content, node) {
+    const annotation = (node as HTMLElement).querySelector('annotation[encoding="application/x-tex"]')
+    const latex = annotation?.textContent?.trim() ?? ''
+    return latex ? `\n\n$$\n${latex}\n$$\n\n` : ''
+  },
+})
+turndown.addRule('katexInline', {
+  filter(node) {
+    return (
+      node.nodeName === 'SPAN' &&
+      (node as HTMLElement).classList.contains('katex') &&
+      !(node as HTMLElement).closest('.katex-display')
+    )
+  },
+  replacement(_content, node) {
+    const annotation = (node as HTMLElement).querySelector('annotation[encoding="application/x-tex"]')
+    const latex = annotation?.textContent?.trim() ?? ''
+    return latex ? `$${latex}$` : ''
+  },
+})
+
 // turndown 默认不支持表格，添加 GFM 表格规则
 turndown.addRule('table', {
   filter: 'table',
