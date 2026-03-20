@@ -3,15 +3,90 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import katex from 'katex'
 import mermaid from 'mermaid'
+import { common, createLowlight } from 'lowlight'
+import { toHtml } from 'hast-util-to-html'
 
 mermaid.initialize({ startOnLoad: false, theme: 'default' })
 
+const lowlight = createLowlight(common)
+
+function highlightCode(el: HTMLElement) {
+  const blocks = el.querySelectorAll<HTMLElement>('pre code')
+  for (const block of blocks) {
+    // skip if already highlighted or is a mermaid block
+    if (block.dataset.highlighted) continue
+    const cls = block.className ?? ''
+    const match = cls.match(/language-(\S+)/)
+    const lang = match?.[1]
+    if (!lang || lang === 'mermaid' || lang === 'plaintext') continue
+    try {
+      const tree = lowlight.highlight(lang, block.textContent ?? '')
+      block.innerHTML = toHtml(tree as Parameters<typeof toHtml>[0])
+      block.dataset.highlighted = '1'
+    } catch {
+      // unsupported language — leave as-is
+    }
+  }
+}
+
+/**
+ * 从 innerHTML 中还原被 marked 破坏的 LaTeX：
+ * marked 把 _..._  转成了 <em>...</em>，导致下划线丢失。
+ * 把 <em>X</em> → _X_、<strong>X</strong> → __X__ 之后再去掉剩余标签。
+ */
+function recoverLatexFromHtml(html: string): string {
+  return html
+    .replace(/<em>([\s\S]*?)<\/em>/gi, '_$1_')
+    .replace(/<strong>([\s\S]*?)<\/strong>/gi, '__$1__')
+    .replace(/<[^>]+>/g, '')      // 去掉其余 HTML 标签
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .trim()
+}
+
 function renderMath(el: HTMLElement) {
+  // ── 1. Block math：处理 <p>/<li>/<div> 等整段都是 $$...$$ 的元素 ──
+  //
+  // marked 有时会把公式内的 _..._  转成 <em>，用 textContent 就丢失了 _。
+  // 改用 innerHTML 还原 <em> → _..._，再送给 KaTeX。
+  const blockCandidates = Array.from(
+    el.querySelectorAll<HTMLElement>('p, li, td, th')
+  )
+  for (const node of blockCandidates) {
+    // 跳过包含子块元素（嵌套 p/ul/pre 等）的节点
+    if (node.querySelector('p, ul, ol, pre, blockquote, table')) continue
+
+    // 用 innerHTML 做匹配：允许内部有 <em>/<strong> 等标签
+    const raw = node.innerHTML.trim()
+    // 整段都是 $$...$$（可能含 HTML 标签）
+    const blockMatch = raw.match(/^\$\$([\s\S]+?)\$\$$/)
+    if (!blockMatch) continue
+
+    const latex = recoverLatexFromHtml(blockMatch[1])
+    try {
+      const rendered = katex.renderToString(latex, {
+        displayMode: true,
+        throwOnError: false,
+      })
+      const wrapper = document.createElement('div')
+      wrapper.className = 'katex-block my-4 text-center overflow-x-auto'
+      wrapper.innerHTML = rendered
+      node.replaceWith(wrapper)
+    } catch { /* 保留原始节点 */ }
+  }
+
+  // ── 2. Inline math：文本节点遍历处理 $...$ ────────────────────────
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       let p = node.parentElement
       while (p && p !== el) {
-        if (p.tagName === 'PRE' || p.tagName === 'CODE') return NodeFilter.FILTER_REJECT
+        if (['PRE', 'CODE', 'SCRIPT', 'STYLE'].includes(p.tagName))
+          return NodeFilter.FILTER_REJECT
+        // 跳过已渲染的 KaTeX 节点
+        if (p.classList.contains('katex') || p.classList.contains('katex-block'))
+          return NodeFilter.FILTER_REJECT
         p = p.parentElement
       }
       return NodeFilter.FILTER_ACCEPT
@@ -100,7 +175,11 @@ export default function PostContent({ html }: { html: string }) {
   useEffect(() => {
     if (!ref.current) return
     renderMath(ref.current)
-    renderMermaid(ref.current)
+    renderMermaid(ref.current).then(() => {
+      // highlight after mermaid (mermaid replaces some pre blocks)
+      if (ref.current) highlightCode(ref.current)
+    })
+    highlightCode(ref.current)
   }, [html])
 
   // ── event delegation: click on any <img> inside content ─────
