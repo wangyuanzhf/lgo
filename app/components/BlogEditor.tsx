@@ -5,6 +5,7 @@ import StarterKit from '@tiptap/starter-kit'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { common, createLowlight } from 'lowlight'
 import Image from '@tiptap/extension-image'
+import Link from '@tiptap/extension-link'
 import Mathematics from '@tiptap/extension-mathematics'
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -450,6 +451,20 @@ function MenuBar({
             <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={btn(editor.isActive('codeBlock'))} type="button">{'<>'} 代码块</button>
             <div className="w-px bg-[#d0d7de] mx-1" />
             <button onClick={() => editor.chain().focus().setHorizontalRule().run()} className={btn(false)} type="button">— 分割线</button>
+            <button
+              type="button"
+              className={btn(editor.isActive('link'))}
+              onClick={() => {
+                if (editor.isActive('link')) {
+                  editor.chain().focus().unsetLink().run()
+                } else {
+                  const url = window.prompt('输入链接地址', 'https://')
+                  if (url) editor.chain().focus().setLink({ href: url }).run()
+                }
+              }}
+            >
+              🔗 链接
+            </button>
             <TablePicker
               onInsert={(rows, cols) =>
                 editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run()
@@ -495,6 +510,7 @@ export function useBlogEditor(initialHtml: string = '') {
       StarterKit.configure({ codeBlock: false }),
       CodeBlockWithLanguage,
       Image,
+      Link.configure({ openOnClick: false }),
       Mathematics,
       Table.configure({ resizable: true, cellMinWidth: 60 }),
       TableRow,
