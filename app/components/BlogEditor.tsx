@@ -195,6 +195,134 @@ turndown.addRule('table', {
   },
 })
 
+// ── 超链接浮动弹框 ────────────────────────────────────────────────────────────
+function LinkPopover({ editor }: { editor: ReturnType<typeof useEditor> }) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [mode, setMode] = useState<'add' | 'edit' | null>(null)
+  const [url, setUrl] = useState('')
+  const [inputVal, setInputVal] = useState('')
+  const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // 监听选区变化和光标位置
+  useEffect(() => {
+    if (!editor) return
+    const update = () => {
+      const { state, view } = editor
+      const { from, to, empty } = state.selection
+
+      // 光标在链接上：显示 edit 模式
+      if (empty && editor.isActive('link')) {
+        const attrs = editor.getAttributes('link')
+        const coords = view.coordsAtPos(from)
+        const wrap = containerRef.current?.parentElement
+        if (!wrap) return
+        const rect = wrap.getBoundingClientRect()
+        setUrl(attrs.href ?? '')
+        setInputVal(attrs.href ?? '')
+        setPos({ top: coords.top - rect.top - 48, left: coords.left - rect.left })
+        setMode('edit')
+        return
+      }
+
+      // 有选中文字（非链接）：显示 add 模式
+      if (!empty) {
+        const coords = view.coordsAtPos(from)
+        const wrap = containerRef.current?.parentElement
+        if (!wrap) return
+        const rect = wrap.getBoundingClientRect()
+        setInputVal('')
+        setPos({ top: coords.top - rect.top - 48, left: coords.left - rect.left })
+        setMode('add')
+        return
+      }
+
+      // 其他情况：隐藏
+      setMode(null)
+      setPos(null)
+    }
+
+    editor.on('selectionUpdate', update)
+    editor.on('transaction', update)
+    return () => {
+      editor.off('selectionUpdate', update)
+      editor.off('transaction', update)
+    }
+  }, [editor])
+
+  // 点击弹框外关闭（不关闭编辑器本身）
+  useEffect(() => {
+    if (!mode) return
+    const handler = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) {
+        setMode(null)
+        setPos(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [mode])
+
+  // 弹出时自动聚焦输入框
+  useEffect(() => {
+    if (mode) setTimeout(() => inputRef.current?.focus(), 50)
+  }, [mode])
+
+  if (!mode || !pos || !editor) return null
+
+  const confirm = () => {
+    const val = inputVal.trim()
+    if (!val) return
+    const href = val.startsWith('http') ? val : `https://${val}`
+    editor.chain().focus().setLink({ href }).run()
+    setMode(null)
+    setPos(null)
+  }
+
+  const remove = () => {
+    editor.chain().focus().unsetLink().run()
+    setMode(null)
+    setPos(null)
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ position: 'absolute', top: Math.max(4, pos.top), left: Math.max(4, pos.left), zIndex: 50 }}
+      className="flex items-center gap-1 bg-white border border-[#d0d7de] rounded-md shadow-lg px-2 py-1.5"
+      onMouseDown={(e) => e.preventDefault()} // 阻止失焦
+    >
+      {mode === 'edit' && (
+        <span className="text-xs text-[#57606a] max-w-[160px] truncate mr-1">{url}</span>
+      )}
+      <input
+        ref={inputRef}
+        value={inputVal}
+        onChange={(e) => setInputVal(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') { setMode(null); setPos(null) } }}
+        placeholder="输入链接地址"
+        className="text-xs border border-[#d0d7de] rounded px-2 py-1 w-48 focus:outline-none focus:border-[#0969da]"
+      />
+      <button
+        type="button"
+        onClick={confirm}
+        className="text-xs px-2 py-1 bg-[#0969da] text-white rounded hover:bg-[#0860ca]"
+      >
+        {mode === 'edit' ? '修改' : '添加'}
+      </button>
+      {mode === 'edit' && (
+        <button
+          type="button"
+          onClick={remove}
+          className="text-xs px-2 py-1 bg-white border border-[#d0d7de] text-[#cf222e] rounded hover:bg-[#fff0ee]"
+        >
+          删除
+        </button>
+      )}
+    </div>
+  )
+}
+
 type Mode = 'rich' | 'markdown'
 
 // ── 表格网格选择器 ─────────────────────────────────────────────────────────────
@@ -451,20 +579,6 @@ function MenuBar({
             <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={btn(editor.isActive('codeBlock'))} type="button">{'<>'} 代码块</button>
             <div className="w-px bg-[#d0d7de] mx-1" />
             <button onClick={() => editor.chain().focus().setHorizontalRule().run()} className={btn(false)} type="button">— 分割线</button>
-            <button
-              type="button"
-              className={btn(editor.isActive('link'))}
-              onClick={() => {
-                if (editor.isActive('link')) {
-                  editor.chain().focus().unsetLink().run()
-                } else {
-                  const url = window.prompt('输入链接地址', 'https://')
-                  if (url) editor.chain().focus().setLink({ href: url }).run()
-                }
-              }}
-            >
-              🔗 链接
-            </button>
             <TablePicker
               onInsert={(rows, cols) =>
                 editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run()
@@ -737,6 +851,7 @@ export default function BlogEditor({
       )}
       {mode === 'rich' ? (
         <div ref={editorWrapRef} style={{ position: 'relative' }}>
+          {editor && <LinkPopover editor={editor} />}
           <style>{`
             /* 列宽拖拽手柄（TipTap resizable 内置） */
             .tiptap .column-resize-handle {
