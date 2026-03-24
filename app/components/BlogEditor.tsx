@@ -210,47 +210,53 @@ function LinkPopover({
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // 监听选区变化
-  useEffect(() => {
-    if (!editor) return
-    const update = () => {
-      const { state, view } = editor
-      const { from, empty } = state.selection
-      const wrap = wrapRef.current
-      if (!wrap) return
-      const wrapRect = wrap.getBoundingClientRect()
+  const calcPos = useCallback((from: number) => {
+    const wrap = wrapRef.current
+    if (!wrap || !editor) return null
+    const coords = editor.view.coordsAtPos(from)
+    const wrapRect = wrap.getBoundingClientRect()
+    return { top: coords.top - wrapRect.top - 44, left: coords.left - wrapRect.left }
+  }, [editor, wrapRef])
 
-      // 光标在链接上 → edit 模式
+  // edit 模式：光标落在链接上时即时显示（不需要等 mouseup）
+  useEffect(() => {
+    if (!editor) return undefined
+    const onSelectionUpdate = () => {
+      const { from, empty } = editor.state.selection
       if (empty && editor.isActive('link')) {
         const attrs = editor.getAttributes('link')
-        const coords = view.coordsAtPos(from)
         setUrl(attrs.href ?? '')
         setInputVal(attrs.href ?? '')
-        setPos({ top: coords.top - wrapRect.top - 44, left: coords.left - wrapRect.left })
+        setPos(calcPos(from))
         setPopMode('edit')
-        return
+      } else if (popMode === 'edit') {
+        // 离开链接时关闭 edit 弹框
+        setPopMode(null)
+        setPos(null)
       }
-
-      // 有选中文字 → add 模式
-      if (!empty) {
-        const coords = view.coordsAtPos(from)
-        setInputVal('')
-        setPos({ top: coords.top - wrapRect.top - 44, left: coords.left - wrapRect.left })
-        setPopMode('add')
-        return
-      }
-
-      setPopMode(null)
-      setPos(null)
     }
+    editor.on('selectionUpdate', onSelectionUpdate)
+    return () => { editor.off('selectionUpdate', onSelectionUpdate) }
+  }, [editor, calcPos, popMode])
 
-    editor.on('selectionUpdate', update)
-    editor.on('transaction', update)
-    return () => {
-      editor.off('selectionUpdate', update)
-      editor.off('transaction', update)
+  // add 模式：mouseup 后才检查是否有选中文字
+  useEffect(() => {
+    if (!editor) return
+    const dom = editor.view.dom
+    const onMouseUp = () => {
+      // 稍等一帧，让 TipTap 更新选区
+      requestAnimationFrame(() => {
+        const { from, empty } = editor.state.selection
+        if (!empty && !editor.isActive('link')) {
+          setInputVal('')
+          setPos(calcPos(from))
+          setPopMode('add')
+        }
+      })
     }
-  }, [editor, wrapRef])
+    dom.addEventListener('mouseup', onMouseUp)
+    return () => dom.removeEventListener('mouseup', onMouseUp)
+  }, [editor, calcPos])
 
   // 点击弹框外关闭
   useEffect(() => {
