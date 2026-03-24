@@ -299,15 +299,29 @@ function LinkPopover({
 
   if (!popMode || !pos || !editor) return null
 
+  // edit 模式：先把整个链接选中，再执行操作
+  const selectLink = () => {
+    const linkEl = hoverLinkRef.current
+    if (!linkEl) return false
+    const view = editor.view
+    const nodePos = view.posAtDOM(linkEl, 0)
+    if (nodePos == null) return false
+    const to = nodePos + (linkEl.textContent?.length ?? 0)
+    editor.commands.setTextSelection({ from: nodePos, to })
+    return true
+  }
+
   const confirm = () => {
     const val = inputVal.trim()
     if (!val) return
     const href = val.startsWith('http') ? val : `https://${val}`
+    if (popMode === 'edit') selectLink()
     editor.chain().focus().setLink({ href }).run()
     setPopMode(null); setPos(null)
   }
 
   const remove = () => {
+    selectLink()
     editor.chain().focus().unsetLink().run()
     hoverLinkRef.current = null
     setPopMode(null); setPos(null)
