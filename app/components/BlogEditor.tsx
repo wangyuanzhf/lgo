@@ -209,44 +209,48 @@ function LinkPopover({
   const [inputVal, setInputVal] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  // 记录当前 hover 的链接 DOM，用于离开时关闭
   const hoverLinkRef = useRef<HTMLElement | null>(null)
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const calcPosFromRect = useCallback((rect: DOMRect) => {
-    const wrap = wrapRef.current
-    if (!wrap) return null
-    const wrapRect = wrap.getBoundingClientRect()
-    return { top: rect.top - wrapRect.top - 44, left: rect.left - wrapRect.left }
-  }, [wrapRef])
+  const clearHideTimer = () => {
+    if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null }
+  }
 
-  // ── edit 模式：鼠标 hover 到链接上时显示 ──────────────────────────────
+  const scheduleHide = useCallback(() => {
+    clearHideTimer()
+    hideTimerRef.current = setTimeout(() => {
+      hoverLinkRef.current = null
+      setPopMode(null)
+      setPos(null)
+    }, 150)
+  }, [])
+
+  // ── edit 模式：hover 到链接上显示 ────────────────────────────────────
   useEffect(() => {
     if (!editor) return
     const dom = editor.view.dom
 
     const onMouseOver = (e: MouseEvent) => {
-      // 找最近的 <a> 祖先
       const target = (e.target as HTMLElement).closest('a[href]') as HTMLElement | null
       if (!target) return
-      if (hoverLinkRef.current === target) return  // 已经在这个链接上了
+      clearHideTimer()
+      if (hoverLinkRef.current === target) return
       hoverLinkRef.current = target
       const rect = target.getBoundingClientRect()
+      const wrap = wrapRef.current
+      if (!wrap) return
+      const wrapRect = wrap.getBoundingClientRect()
       setUrl(target.getAttribute('href') ?? '')
       setInputVal(target.getAttribute('href') ?? '')
-      setPos(calcPosFromRect(rect))
+      setPos({ top: rect.top - wrapRect.top - 44, left: rect.left - wrapRect.left })
       setPopMode('edit')
     }
 
     const onMouseOut = (e: MouseEvent) => {
-      // 移到弹框内不关闭
       const related = e.relatedTarget as HTMLElement | null
-      if (containerRef.current?.contains(related)) return
-      if ((related as HTMLElement | null)?.closest('a[href]')) return
-      if (hoverLinkRef.current) {
-        hoverLinkRef.current = null
-        setPopMode(null)
-        setPos(null)
-      }
+      // 移到弹框内：取消延迟，不关闭
+      if (containerRef.current?.contains(related)) { clearHideTimer(); return }
+      if ((e.target as HTMLElement).closest('a[href]')) scheduleHide()
     }
 
     dom.addEventListener('mouseover', onMouseOver)
@@ -255,9 +259,9 @@ function LinkPopover({
       dom.removeEventListener('mouseover', onMouseOver)
       dom.removeEventListener('mouseout', onMouseOut)
     }
-  }, [editor, calcPosFromRect])
+  }, [editor, wrapRef, scheduleHide])
 
-  // ── add 模式：mouseup 后检查选区 ──────────────────────────────────────
+  // ── add 模式：mouseup 后检查选区 ─────────────────────────────────────
   useEffect(() => {
     if (!editor) return
     const dom = editor.view.dom
@@ -272,6 +276,8 @@ function LinkPopover({
           setInputVal('')
           setPos({ top: coords.top - wrapRect.top - 44, left: coords.left - wrapRect.left })
           setPopMode('add')
+          // add 弹框弹出后聚焦 input（编辑器选区通过 preventDefault 保住）
+          setTimeout(() => inputRef.current?.focus(), 30)
         }
       })
     }
@@ -279,31 +285,16 @@ function LinkPopover({
     return () => dom.removeEventListener('mouseup', onMouseUp)
   }, [editor, wrapRef])
 
-  // ── 弹框鼠标离开时关闭（edit 模式）────────────────────────────────────
-  const onPopoverMouseLeave = () => {
-    if (popMode === 'edit') {
-      hoverLinkRef.current = null
-      setPopMode(null)
-      setPos(null)
-    }
-  }
-
-  // ── add 模式点击弹框外关闭 ────────────────────────────────────────────
+  // ── add 模式点弹框外关闭 ─────────────────────────────────────────────
   useEffect(() => {
     if (popMode !== 'add') return
     const handler = (e: MouseEvent) => {
       if (!containerRef.current?.contains(e.target as Node)) {
-        setPopMode(null)
-        setPos(null)
+        setPopMode(null); setPos(null)
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [popMode])
-
-  // 弹出时聚焦（add 模式才聚焦，edit 不抢焦点）
-  useEffect(() => {
-    if (popMode === 'add') setTimeout(() => inputRef.current?.focus(), 30)
   }, [popMode])
 
   if (!popMode || !pos || !editor) return null
@@ -313,15 +304,13 @@ function LinkPopover({
     if (!val) return
     const href = val.startsWith('http') ? val : `https://${val}`
     editor.chain().focus().setLink({ href }).run()
-    setPopMode(null)
-    setPos(null)
+    setPopMode(null); setPos(null)
   }
 
   const remove = () => {
     editor.chain().focus().unsetLink().run()
     hoverLinkRef.current = null
-    setPopMode(null)
-    setPos(null)
+    setPopMode(null); setPos(null)
   }
 
   return (
@@ -329,9 +318,14 @@ function LinkPopover({
       ref={containerRef}
       style={{ position: 'absolute', top: Math.max(4, pos.top), left: Math.max(4, pos.left), zIndex: 50 }}
       className="flex items-center gap-1 bg-white border border-[#d0d7de] rounded-md shadow-lg px-2 py-1.5"
-      onMouseLeave={onPopoverMouseLeave}
-      // add 模式下阻止 mousedown 失焦（保持选区）；edit 模式不需要
-      onMouseDown={popMode === 'add' ? (e) => e.preventDefault() : undefined}
+      onMouseEnter={clearHideTimer}
+      onMouseLeave={() => { if (popMode === 'edit') scheduleHide() }}
+      // 阻止 mousedown 让编辑器失焦（保住选区高亮），再手动 focus 点击目标
+      onMouseDown={(e) => {
+        e.preventDefault()
+        const t = e.target as HTMLElement
+        if (t.tagName === 'INPUT') inputRef.current?.focus()
+      }}
     >
       {popMode === 'edit' && (
         <span className="text-xs text-[#57606a] max-w-[140px] truncate mr-1">{url}</span>
@@ -347,11 +341,13 @@ function LinkPopover({
         placeholder="输入链接地址"
         className="text-xs border border-[#d0d7de] rounded px-2 py-1 w-44 focus:outline-none focus:border-[#0969da]"
       />
-      <button type="button" onClick={confirm} className="text-xs px-2 py-1 bg-[#0969da] text-white rounded hover:bg-[#0860ca]">
+      <button type="button" onClick={confirm}
+        className="text-xs px-2 py-1 bg-[#0969da] text-white rounded hover:bg-[#0860ca]">
         {popMode === 'edit' ? '修改' : '添加'}
       </button>
       {popMode === 'edit' && (
-        <button type="button" onClick={remove} className="text-xs px-2 py-1 bg-white border border-[#d0d7de] text-[#cf222e] rounded hover:bg-[#fff0ee]">
+        <button type="button" onClick={remove}
+          className="text-xs px-2 py-1 bg-white border border-[#d0d7de] text-[#cf222e] rounded hover:bg-[#fff0ee]">
           删除
         </button>
       )}
