@@ -899,6 +899,10 @@ export default function BlogEditor({
         <div ref={editorWrapRef} style={{ position: 'relative' }}>
           {editor && <LinkPopover editor={editor} wrapRef={editorWrapRef} />}
           <style>{`
+            /* 失焦时保持选区高亮（添加超链接弹框弹出时编辑器失焦） */
+            .tiptap ::selection { background: #b4d5fe; }
+            .tiptap:not(:focus-within) .ProseMirror-selectednode,
+            .tiptap .ProseMirror:not(:focus) ::selection { background: #b4d5fe; }
             /* 列宽拖拽手柄（TipTap resizable 内置） */
             .tiptap .column-resize-handle {
               position: absolute;
