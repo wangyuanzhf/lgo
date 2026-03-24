@@ -195,8 +195,10 @@ turndown.addRule('table', {
   },
 })
 
-// ── 超链接浮动弹框 ────────────────────────────────────────────────────────────
-function LinkPopover({
+// ── 超链接：hover 预览 + 右键菜单 ─────────────────────────────────────────────
+
+/** hover 到链接上时显示 URL 预览小条 */
+function LinkHoverTip({
   editor,
   wrapRef,
 }: {
@@ -204,169 +206,229 @@ function LinkPopover({
   wrapRef: React.RefObject<HTMLDivElement | null>
 }) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
-  const [popMode, setPopMode] = useState<'add' | 'edit' | null>(null)
-  const [url, setUrl] = useState('')
-  const [inputVal, setInputVal] = useState('')
-  const containerRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const hoverLinkRef = useRef<HTMLElement | null>(null)
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [href, setHref] = useState('')
+  const tipRef = useRef<HTMLDivElement>(null)
+  const linkRef = useRef<HTMLElement | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const clearHideTimer = () => {
-    if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null }
-  }
+  const clearTimer = () => { if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null } }
+  const hide = () => { linkRef.current = null; setPos(null) }
+  const scheduleHide = () => { clearTimer(); timerRef.current = setTimeout(hide, 150) }
 
-  const scheduleHide = useCallback(() => {
-    clearHideTimer()
-    hideTimerRef.current = setTimeout(() => {
-      hoverLinkRef.current = null
-      setPopMode(null)
-      setPos(null)
-    }, 150)
-  }, [])
-
-  // ── edit 模式：hover 到链接上显示 ────────────────────────────────────
   useEffect(() => {
     if (!editor) return
     const dom = editor.view.dom
 
-    const onMouseOver = (e: MouseEvent) => {
-      const target = (e.target as HTMLElement).closest('a[href]') as HTMLElement | null
-      if (!target) return
-      clearHideTimer()
-      if (hoverLinkRef.current === target) return
-      hoverLinkRef.current = target
-      const rect = target.getBoundingClientRect()
+    const onOver = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement).closest('a[href]') as HTMLElement | null
+      if (!a) return
+      clearTimer()
+      if (linkRef.current === a) return
+      linkRef.current = a
       const wrap = wrapRef.current
       if (!wrap) return
-      const wrapRect = wrap.getBoundingClientRect()
-      setUrl(target.getAttribute('href') ?? '')
-      setInputVal(target.getAttribute('href') ?? '')
-      setPos({ top: rect.top - wrapRect.top - 44, left: rect.left - wrapRect.left })
-      setPopMode('edit')
+      const r = a.getBoundingClientRect()
+      const wr = wrap.getBoundingClientRect()
+      setHref(a.getAttribute('href') ?? '')
+      setPos({ top: r.bottom - wr.top + 4, left: r.left - wr.left })
     }
 
-    const onMouseOut = (e: MouseEvent) => {
-      const related = e.relatedTarget as HTMLElement | null
-      // 移到弹框内：取消延迟，不关闭
-      if (containerRef.current?.contains(related)) { clearHideTimer(); return }
+    const onOut = (e: MouseEvent) => {
+      const rel = e.relatedTarget as HTMLElement | null
+      if (tipRef.current?.contains(rel)) { clearTimer(); return }
       if ((e.target as HTMLElement).closest('a[href]')) scheduleHide()
     }
 
-    dom.addEventListener('mouseover', onMouseOver)
-    dom.addEventListener('mouseout', onMouseOut)
-    return () => {
-      dom.removeEventListener('mouseover', onMouseOver)
-      dom.removeEventListener('mouseout', onMouseOut)
-    }
-  }, [editor, wrapRef, scheduleHide])
-
-  // ── add 模式：mouseup 后检查选区 ─────────────────────────────────────
-  useEffect(() => {
-    if (!editor) return
-    const dom = editor.view.dom
-    const onMouseUp = () => {
-      requestAnimationFrame(() => {
-        const { from, empty } = editor.state.selection
-        if (!empty) {
-          const wrap = wrapRef.current
-          if (!wrap) return
-          const coords = editor.view.coordsAtPos(from)
-          const wrapRect = wrap.getBoundingClientRect()
-          setInputVal('')
-          setPos({ top: coords.top - wrapRect.top - 44, left: coords.left - wrapRect.left })
-          setPopMode('add')
-          // add 弹框弹出后聚焦 input（编辑器选区通过 preventDefault 保住）
-          setTimeout(() => inputRef.current?.focus(), 30)
-        }
-      })
-    }
-    dom.addEventListener('mouseup', onMouseUp)
-    return () => dom.removeEventListener('mouseup', onMouseUp)
+    dom.addEventListener('mouseover', onOver)
+    dom.addEventListener('mouseout', onOut)
+    return () => { dom.removeEventListener('mouseover', onOver); dom.removeEventListener('mouseout', onOut) }
   }, [editor, wrapRef])
 
-  // ── add 模式点弹框外关闭 ─────────────────────────────────────────────
-  useEffect(() => {
-    if (popMode !== 'add') return
-    const handler = (e: MouseEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) {
-        setPopMode(null); setPos(null)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [popMode])
-
-  if (!popMode || !pos || !editor) return null
-
-  // edit 模式：先把整个链接选中，再执行操作
-  const selectLink = () => {
-    const linkEl = hoverLinkRef.current
-    if (!linkEl) return false
-    const view = editor.view
-    const nodePos = view.posAtDOM(linkEl, 0)
-    if (nodePos == null) return false
-    const to = nodePos + (linkEl.textContent?.length ?? 0)
-    editor.commands.setTextSelection({ from: nodePos, to })
-    return true
-  }
-
-  const confirm = () => {
-    const val = inputVal.trim()
-    if (!val) return
-    const href = val.startsWith('http') ? val : `https://${val}`
-    if (popMode === 'edit') selectLink()
-    editor.chain().focus().setLink({ href }).run()
-    setPopMode(null); setPos(null)
-  }
-
-  const remove = () => {
-    selectLink()
-    editor.chain().focus().unsetLink().run()
-    hoverLinkRef.current = null
-    setPopMode(null); setPos(null)
-  }
+  if (!pos) return null
 
   return (
     <div
-      ref={containerRef}
-      style={{ position: 'absolute', top: Math.max(4, pos.top), left: Math.max(4, pos.left), zIndex: 50 }}
-      className="flex items-center gap-1 bg-white border border-[#d0d7de] rounded-md shadow-lg px-2 py-1.5"
-      onMouseEnter={clearHideTimer}
-      onMouseLeave={() => { if (popMode === 'edit') scheduleHide() }}
-      // 阻止 mousedown 让编辑器失焦（保住选区高亮），再手动 focus 点击目标
-      onMouseDown={(e) => {
-        e.preventDefault()
-        const t = e.target as HTMLElement
-        if (t.tagName === 'INPUT') inputRef.current?.focus()
-      }}
+      ref={tipRef}
+      style={{ position: 'absolute', top: pos.top, left: Math.max(0, pos.left), zIndex: 50 }}
+      className="max-w-[320px] truncate bg-[#1f2328] text-white text-xs px-2 py-1 rounded shadow-lg pointer-events-auto"
+      onMouseEnter={clearTimer}
+      onMouseLeave={scheduleHide}
     >
-      {popMode === 'edit' && (
-        <span className="text-xs text-[#57606a] max-w-[140px] truncate mr-1">{url}</span>
-      )}
-      <input
-        ref={inputRef}
-        value={inputVal}
-        onChange={(e) => setInputVal(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') confirm()
-          if (e.key === 'Escape') { setPopMode(null); setPos(null) }
-        }}
-        placeholder="输入链接地址"
-        className="text-xs border border-[#d0d7de] rounded px-2 py-1 w-44 focus:outline-none focus:border-[#0969da]"
-      />
-      <button type="button" onClick={confirm}
-        className="text-xs px-2 py-1 bg-[#0969da] text-white rounded hover:bg-[#0860ca]">
-        {popMode === 'edit' ? '修改' : '添加'}
-      </button>
-      {popMode === 'edit' && (
-        <button type="button" onClick={remove}
-          className="text-xs px-2 py-1 bg-white border border-[#d0d7de] text-[#cf222e] rounded hover:bg-[#fff0ee]">
-          删除
-        </button>
-      )}
+      {href}
     </div>
   )
+}
+
+/** 右键菜单：添加/修改/删除超链接 */
+function LinkContextMenu({
+  editor,
+  wrapRef,
+}: {
+  editor: ReturnType<typeof useEditor>
+  wrapRef: React.RefObject<HTMLDivElement | null>
+}) {
+  const [menu, setMenu] = useState<{ top: number; left: number; onLink: boolean; linkEl: HTMLElement | null } | null>(null)
+  const [inputMode, setInputMode] = useState<{ href: string } | null>(null)
+  const [inputVal, setInputVal] = useState('')
+  const menuRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // 右键弹出菜单
+  useEffect(() => {
+    if (!editor) return
+    const dom = editor.view.dom
+
+    const onContextMenu = (e: MouseEvent) => {
+      const wrap = wrapRef.current
+      if (!wrap) return
+      const wr = wrap.getBoundingClientRect()
+      const linkEl = (e.target as HTMLElement).closest('a[href]') as HTMLElement | null
+      const { empty } = editor.state.selection
+
+      // 只在两种情况弹出：选中文字 或 右键点在链接上
+      if (empty && !linkEl) return
+
+      e.preventDefault()
+      setInputMode(null)
+      setMenu({
+        top: e.clientY - wr.top,
+        left: e.clientX - wr.left,
+        onLink: !!linkEl,
+        linkEl,
+      })
+    }
+
+    dom.addEventListener('contextmenu', onContextMenu)
+    return () => dom.removeEventListener('contextmenu', onContextMenu)
+  }, [editor, wrapRef])
+
+  // 点击外部关闭
+  useEffect(() => {
+    if (!menu && !inputMode) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current?.contains(e.target as Node)) return
+      setMenu(null); setInputMode(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [menu, inputMode])
+
+  // 聚焦输入框
+  useEffect(() => {
+    if (inputMode) setTimeout(() => inputRef.current?.focus(), 30)
+  }, [inputMode])
+
+  const selectLink = (linkEl: HTMLElement) => {
+    if (!editor) return
+    const nodePos = editor.view.posAtDOM(linkEl, 0)
+    if (nodePos == null) return
+    const to = nodePos + (linkEl.textContent?.length ?? 0)
+    editor.commands.setTextSelection({ from: nodePos, to })
+  }
+
+  const doAdd = () => {
+    setMenu(null)
+    setInputVal('')
+    setInputMode({ href: '' })
+  }
+
+  const doEdit = () => {
+    const href = menu?.linkEl?.getAttribute('href') ?? ''
+    setMenu(null)
+    setInputVal(href)
+    setInputMode({ href })
+  }
+
+  const doRemove = () => {
+    if (menu?.linkEl) selectLink(menu.linkEl)
+    editor?.chain().focus().unsetLink().run()
+    setMenu(null); setInputMode(null)
+  }
+
+  const confirmInput = () => {
+    const val = inputVal.trim()
+    if (!val || !editor) return
+    const href = val.startsWith('http') ? val : `https://${val}`
+    // 如果是修改，先选中原链接
+    if (inputMode?.href && menu?.linkEl) selectLink(menu.linkEl)
+    editor.chain().focus().setLink({ href }).run()
+    setInputMode(null); setMenu(null)
+  }
+
+  if (!editor) return null
+
+  // 右键菜单
+  if (menu && !inputMode) {
+    return (
+      <div
+        ref={menuRef}
+        style={{ position: 'absolute', top: menu.top, left: menu.left, zIndex: 60 }}
+        className="bg-white border border-[#d0d7de] rounded-md shadow-lg py-1 min-w-[140px]"
+        onMouseDown={(e) => e.preventDefault()}
+      >
+        {!menu.onLink && (
+          <button type="button" onClick={doAdd}
+            className="w-full text-left px-3 py-1.5 text-xs text-[#1f2328] hover:bg-[#f6f8fa] flex items-center gap-2">
+            🔗 添加超链接
+          </button>
+        )}
+        {menu.onLink && (
+          <>
+            <button type="button" onClick={doEdit}
+              className="w-full text-left px-3 py-1.5 text-xs text-[#1f2328] hover:bg-[#f6f8fa] flex items-center gap-2">
+              ✏️ 修改超链接
+            </button>
+            <button type="button" onClick={doRemove}
+              className="w-full text-left px-3 py-1.5 text-xs text-[#cf222e] hover:bg-[#fff0ee] flex items-center gap-2">
+              🗑️ 删除超链接
+            </button>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  // URL 输入框（添加/修改时弹出）
+  if (inputMode) {
+    const wrap = wrapRef.current
+    const wr = wrap?.getBoundingClientRect()
+    // 定位在选区起点上方
+    let top = 0, left = 0
+    if (editor && wr) {
+      const { from } = editor.state.selection
+      const coords = editor.view.coordsAtPos(from)
+      top = coords.top - wr.top - 44
+      left = coords.left - wr.left
+    }
+
+    return (
+      <div
+        ref={menuRef}
+        style={{ position: 'absolute', top: Math.max(4, top), left: Math.max(4, left), zIndex: 60 }}
+        className="flex items-center gap-1 bg-white border border-[#d0d7de] rounded-md shadow-lg px-2 py-1.5"
+        onMouseDown={(e) => { e.preventDefault(); if ((e.target as HTMLElement).tagName === 'INPUT') inputRef.current?.focus() }}
+      >
+        <input
+          ref={inputRef}
+          value={inputVal}
+          onChange={(e) => setInputVal(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') confirmInput(); if (e.key === 'Escape') { setInputMode(null) } }}
+          placeholder="输入链接地址"
+          className="text-xs border border-[#d0d7de] rounded px-2 py-1 w-52 focus:outline-none focus:border-[#0969da]"
+        />
+        <button type="button" onClick={confirmInput}
+          className="text-xs px-2 py-1 bg-[#0969da] text-white rounded hover:bg-[#0860ca] whitespace-nowrap">
+          确定
+        </button>
+        <button type="button" onClick={() => setInputMode(null)}
+          className="text-xs px-2 py-1 bg-white border border-[#d0d7de] text-[#57606a] rounded hover:bg-[#f6f8fa]">
+          取消
+        </button>
+      </div>
+    )
+  }
+
+  return null
 }
 
 type Mode = 'rich' | 'markdown'
@@ -897,7 +959,8 @@ export default function BlogEditor({
       )}
       {mode === 'rich' ? (
         <div ref={editorWrapRef} style={{ position: 'relative' }}>
-          {editor && <LinkPopover editor={editor} wrapRef={editorWrapRef} />}
+          {editor && <LinkHoverTip editor={editor} wrapRef={editorWrapRef} />}
+          {editor && <LinkContextMenu editor={editor} wrapRef={editorWrapRef} />}
           <style>{`
             /* 失焦时保持选区高亮（添加超链接弹框弹出时编辑器失焦） */
             .tiptap ::selection { background: #b4d5fe; }
