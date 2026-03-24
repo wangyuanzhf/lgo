@@ -196,49 +196,51 @@ turndown.addRule('table', {
 })
 
 // ── 超链接浮动弹框 ────────────────────────────────────────────────────────────
-function LinkPopover({ editor }: { editor: ReturnType<typeof useEditor> }) {
+function LinkPopover({
+  editor,
+  wrapRef,
+}: {
+  editor: ReturnType<typeof useEditor>
+  wrapRef: React.RefObject<HTMLDivElement | null>
+}) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
-  const [mode, setMode] = useState<'add' | 'edit' | null>(null)
+  const [popMode, setPopMode] = useState<'add' | 'edit' | null>(null)
   const [url, setUrl] = useState('')
   const [inputVal, setInputVal] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // 监听选区变化和光标位置
+  // 监听选区变化
   useEffect(() => {
     if (!editor) return
     const update = () => {
       const { state, view } = editor
-      const { from, to, empty } = state.selection
+      const { from, empty } = state.selection
+      const wrap = wrapRef.current
+      if (!wrap) return
+      const wrapRect = wrap.getBoundingClientRect()
 
-      // 光标在链接上：显示 edit 模式
+      // 光标在链接上 → edit 模式
       if (empty && editor.isActive('link')) {
         const attrs = editor.getAttributes('link')
         const coords = view.coordsAtPos(from)
-        const wrap = containerRef.current?.parentElement
-        if (!wrap) return
-        const rect = wrap.getBoundingClientRect()
         setUrl(attrs.href ?? '')
         setInputVal(attrs.href ?? '')
-        setPos({ top: coords.top - rect.top - 48, left: coords.left - rect.left })
-        setMode('edit')
+        setPos({ top: coords.top - wrapRect.top - 44, left: coords.left - wrapRect.left })
+        setPopMode('edit')
         return
       }
 
-      // 有选中文字（非链接）：显示 add 模式
+      // 有选中文字 → add 模式
       if (!empty) {
         const coords = view.coordsAtPos(from)
-        const wrap = containerRef.current?.parentElement
-        if (!wrap) return
-        const rect = wrap.getBoundingClientRect()
         setInputVal('')
-        setPos({ top: coords.top - rect.top - 48, left: coords.left - rect.left })
-        setMode('add')
+        setPos({ top: coords.top - wrapRect.top - 44, left: coords.left - wrapRect.left })
+        setPopMode('add')
         return
       }
 
-      // 其他情况：隐藏
-      setMode(null)
+      setPopMode(null)
       setPos(null)
     }
 
@@ -248,40 +250,40 @@ function LinkPopover({ editor }: { editor: ReturnType<typeof useEditor> }) {
       editor.off('selectionUpdate', update)
       editor.off('transaction', update)
     }
-  }, [editor])
+  }, [editor, wrapRef])
 
-  // 点击弹框外关闭（不关闭编辑器本身）
+  // 点击弹框外关闭
   useEffect(() => {
-    if (!mode) return
+    if (!popMode) return
     const handler = (e: MouseEvent) => {
       if (!containerRef.current?.contains(e.target as Node)) {
-        setMode(null)
+        setPopMode(null)
         setPos(null)
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [mode])
+  }, [popMode])
 
-  // 弹出时自动聚焦输入框
+  // 弹出时自动聚焦
   useEffect(() => {
-    if (mode) setTimeout(() => inputRef.current?.focus(), 50)
-  }, [mode])
+    if (popMode) setTimeout(() => inputRef.current?.focus(), 30)
+  }, [popMode])
 
-  if (!mode || !pos || !editor) return null
+  if (!popMode || !pos || !editor) return null
 
   const confirm = () => {
     const val = inputVal.trim()
     if (!val) return
     const href = val.startsWith('http') ? val : `https://${val}`
     editor.chain().focus().setLink({ href }).run()
-    setMode(null)
+    setPopMode(null)
     setPos(null)
   }
 
   const remove = () => {
     editor.chain().focus().unsetLink().run()
-    setMode(null)
+    setPopMode(null)
     setPos(null)
   }
 
@@ -290,32 +292,27 @@ function LinkPopover({ editor }: { editor: ReturnType<typeof useEditor> }) {
       ref={containerRef}
       style={{ position: 'absolute', top: Math.max(4, pos.top), left: Math.max(4, pos.left), zIndex: 50 }}
       className="flex items-center gap-1 bg-white border border-[#d0d7de] rounded-md shadow-lg px-2 py-1.5"
-      onMouseDown={(e) => e.preventDefault()} // 阻止失焦
+      onMouseDown={(e) => e.preventDefault()}
     >
-      {mode === 'edit' && (
-        <span className="text-xs text-[#57606a] max-w-[160px] truncate mr-1">{url}</span>
+      {popMode === 'edit' && (
+        <span className="text-xs text-[#57606a] max-w-[140px] truncate mr-1">{url}</span>
       )}
       <input
         ref={inputRef}
         value={inputVal}
         onChange={(e) => setInputVal(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') { setMode(null); setPos(null) } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') confirm()
+          if (e.key === 'Escape') { setPopMode(null); setPos(null) }
+        }}
         placeholder="输入链接地址"
-        className="text-xs border border-[#d0d7de] rounded px-2 py-1 w-48 focus:outline-none focus:border-[#0969da]"
+        className="text-xs border border-[#d0d7de] rounded px-2 py-1 w-44 focus:outline-none focus:border-[#0969da]"
       />
-      <button
-        type="button"
-        onClick={confirm}
-        className="text-xs px-2 py-1 bg-[#0969da] text-white rounded hover:bg-[#0860ca]"
-      >
-        {mode === 'edit' ? '修改' : '添加'}
+      <button type="button" onClick={confirm} className="text-xs px-2 py-1 bg-[#0969da] text-white rounded hover:bg-[#0860ca]">
+        {popMode === 'edit' ? '修改' : '添加'}
       </button>
-      {mode === 'edit' && (
-        <button
-          type="button"
-          onClick={remove}
-          className="text-xs px-2 py-1 bg-white border border-[#d0d7de] text-[#cf222e] rounded hover:bg-[#fff0ee]"
-        >
+      {popMode === 'edit' && (
+        <button type="button" onClick={remove} className="text-xs px-2 py-1 bg-white border border-[#d0d7de] text-[#cf222e] rounded hover:bg-[#fff0ee]">
           删除
         </button>
       )}
@@ -851,7 +848,7 @@ export default function BlogEditor({
       )}
       {mode === 'rich' ? (
         <div ref={editorWrapRef} style={{ position: 'relative' }}>
-          {editor && <LinkPopover editor={editor} />}
+          {editor && <LinkPopover editor={editor} wrapRef={editorWrapRef} />}
           <style>{`
             /* 列宽拖拽手柄（TipTap resizable 内置） */
             .tiptap .column-resize-handle {
